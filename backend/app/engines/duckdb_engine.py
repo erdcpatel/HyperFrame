@@ -1,3 +1,4 @@
+import os
 import duckdb
 import pyarrow as pa
 from typing import Tuple, Any, Optional
@@ -136,11 +137,30 @@ class DuckDBEngine(BaseEngine):
 
         return sql
 
+    def _sync_catalog_views(self, cursor, active_dataset: Optional[str] = None, active_path: Optional[str] = None):
+        """
+        Registers all uploaded datasets in the catalog as temporary DuckDB views.
+        This enables cross-file SQL joins across ANY number of uploaded files with 0 MB RAM overhead!
+        """
+        from backend.app.core.catalog import catalog
+        cat = catalog._read_catalog()
+        for ds_id, meta in cat.items():
+            p = meta.get("path")
+            if p and os.path.exists(p):
+                posix_p = to_posix_path(p)
+                cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW "{ds_id}" AS SELECT * FROM read_parquet(\'{posix_p}\');')
+
+        # Also register :dataset as an alias for the currently active dataset
+        if active_path and os.path.exists(active_path):
+            posix_act = to_posix_path(active_path)
+            cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW ":dataset" AS SELECT * FROM read_parquet(\'{posix_act}\');')
+
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         # 1. Total matching rows count
         count_sql = self._compile_sql(query, file_path, count_only=True)
         count_cursor = self._con.cursor()
         try:
+            self._sync_catalog_views(count_cursor, query.dataset, file_path)
             res_rows = count_cursor.sql(count_sql).fetchall()
             total_rows = res_rows[0][0] if res_rows and len(res_rows[0]) > 0 else 0
         except Exception:
@@ -151,6 +171,7 @@ class DuckDBEngine(BaseEngine):
         # 2. Main data query
         data_cursor = self._con.cursor()
         try:
+            self._sync_catalog_views(data_cursor, query.dataset, file_path)
             sql = self._compile_sql(query, file_path, count_only=False)
             res = data_cursor.sql(sql).arrow()
             if hasattr(res, "read_all"):
@@ -164,6 +185,7 @@ class DuckDBEngine(BaseEngine):
     def explain(self, query: HyperQuery, file_path: str) -> str:
         cursor = self._con.cursor()
         try:
+            self._sync_catalog_views(cursor, query.dataset, file_path)
             sql = self._compile_sql(query, file_path, count_only=False)
             res = cursor.sql(f"EXPLAIN ANALYZE {sql}").fetchall()
             return "\n".join(str(r[1]) if len(r) > 1 else str(r[0]) for r in res)

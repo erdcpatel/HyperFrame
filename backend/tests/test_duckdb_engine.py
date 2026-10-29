@@ -61,3 +61,31 @@ def test_duckdb_explain(sample_dataset):
     q = HyperQuery(dataset="test_duckdb_sample", limit=10)
     plan = engine.explain(q, sample_dataset)
     assert "EXPLAIN" not in plan or "Scan" in plan or "PARQUET" in plan
+
+def test_duckdb_multi_dataset_join(sample_dataset):
+    # Register a secondary small dataset
+    sec_weather = catalog.generate_sample_dataset("test_secondary_ds", num_rows=100)
+    engine = DuckDBEngine()
+    
+    # Query with JOIN using dataset names directly
+    join_sql = """
+    SELECT 
+        a.trade_id, 
+        a.symbol, 
+        a.notional, 
+        b.price AS secondary_price
+    FROM test_duckdb_sample a
+    JOIN test_secondary_ds b ON a.symbol = b.symbol
+    LIMIT 25;
+    """
+    q = HyperQuery(
+        dataset="test_duckdb_sample",
+        raw_sql=join_sql,
+        limit=25
+    )
+    table, sql, total_rows = engine.execute_query(q, sample_dataset)
+    assert table.num_rows <= 25
+    assert "trade_id" in table.column_names
+    assert "secondary_price" in table.column_names
+
+    catalog.delete_dataset("test_secondary_ds")
