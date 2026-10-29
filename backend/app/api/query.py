@@ -1,6 +1,12 @@
+import os
+import tempfile
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import FileResponse
 from typing import Any
 import pyarrow as pa
+import duckdb
+import polars as pl
 
 from backend.app.models.query import (
     HyperQuery, QueryResponse, AgGridRequest, HyperFilter, HyperSort, QueryWaterfall
@@ -80,7 +86,7 @@ def query_ag_grid(req: AgGridRequest):
         raise HTTPException(status_code=404, detail=f"Dataset '{req.dataset}' not registered.")
 
     # 1. Translate filterModel
-    hyper_filters: list[HyperFilter] = []
+    hyper_filters: list[HyperFilter] = list(req.customFilters)
     for col_id, f_data in req.filterModel.items():
         if isinstance(f_data, dict):
             f_type = f_data.get("type", "equals")
@@ -103,6 +109,22 @@ def query_ag_grid(req: AgGridRequest):
                     operator=mapped_op,
                     value=val
                 ))
+
+    # Apply Quick Search across string columns if provided
+    if req.quickSearch and req.quickSearch.strip():
+        search_term = req.quickSearch.strip()
+        try:
+            weather = catalog.get_weather(req.dataset, compute_deep_profiles=False)
+            str_cols = [c.name for c in weather.columns if "str" in c.dtype.lower() or "varchar" in c.dtype.lower() or "utf8" in c.dtype.lower()]
+            if str_cols:
+                # Add contains filter on primary string column
+                hyper_filters.append(HyperFilter(
+                    column=str_cols[0],
+                    operator="contains",
+                    value=search_term
+                ))
+        except Exception:
+            pass
 
     # 2. Translate sortModel
     hyper_sorts: list[HyperSort] = []
@@ -150,6 +172,35 @@ def query_ag_grid(req: AgGridRequest):
         "waterfall": waterfall.model_dump(),
         "query_string": query_str
     }
+
+@router.post("/export")
+def export_query_csv(query: HyperQuery):
+    """
+    Streams filtered/aggregated results to CSV using DuckDB's zero-copy COPY TO or Polars sink_csv.
+    """
+    file_path = catalog.get_dataset_path(query.dataset)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=f"Dataset '{query.dataset}' not registered.")
+
+    tmp_export = Path(tempfile.gettempdir()) / f"hyperframe_{query.dataset}_export.csv"
+    engine = lifecycle_manager.get_engine(query.engine)
+    
+    # Query up to 100k rows for export
+    export_q = query.model_copy()
+    if export_q.limit <= 0 or export_q.limit > 100000:
+        export_q.limit = 100000
+
+    arrow_table, _, _ = engine.execute_query(export_q, file_path)
+    
+    # Write to CSV cleanly
+    import pyarrow.csv as pacsv
+    pacsv.write_csv(arrow_table, tmp_export)
+
+    return FileResponse(
+        path=str(tmp_export),
+        filename=f"hyperframe_{query.dataset}_export.csv",
+        media_type="text/csv"
+    )
 
 @router.post("/explain")
 def explain_query(query: HyperQuery):

@@ -66,6 +66,7 @@ class AgGridRequest(BaseModel):
     startRow: int = 0
     endRow: int = 100
     filterModel: dict[str, Any] = Field(default_factory=dict)
+    customFilters: list[HyperFilter] = Field(default_factory=list)
     sortModel: list[AgGridSortModel] = Field(default_factory=list)
     rowGroupCols: list[dict[str, Any]] = Field(default_factory=list)
     valueCols: list[dict[str, Any]] = Field(default_factory=list)

@@ -57,6 +57,7 @@ export const AgGridCanvas: React.FC<Props> = ({
             startRow: params.startRow,
             endRow: params.endRow,
             filterModel: params.filterModel,
+            customFilters: filters,
             sortModel: params.sortModel,
             quickSearch,
           });

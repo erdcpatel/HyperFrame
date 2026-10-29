@@ -23,7 +23,8 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             )
             await websocket.send_text(snapshot.model_dump_json())
             await asyncio.sleep(0.5)
-    except (WebSocketDisconnect, asyncio.CancelledError):
+    except Exception:
+        # Client disconnect or connection reset (clean exit)
         pass
 
 @router.websocket("/ws/perspective")

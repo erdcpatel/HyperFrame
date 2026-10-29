@@ -6,7 +6,8 @@ import {
   Search,
   Grid,
   BarChart3,
-  Code2
+  Code2,
+  Download
 } from 'lucide-react';
 import { ColumnWeather, HyperFilter, FilterOperator } from '../../types';
 
@@ -20,6 +21,7 @@ interface Props {
   onQuickSearchChange: (val: string) => void;
   viewMode: 'grid' | 'pivot' | 'sql';
   onViewModeChange: (mode: 'grid' | 'pivot' | 'sql') => void;
+  onExportCsv?: () => void;
 }
 
 export const FilterBar: React.FC<Props> = ({
@@ -32,6 +34,7 @@ export const FilterBar: React.FC<Props> = ({
   onQuickSearchChange,
   viewMode,
   onViewModeChange,
+  onExportCsv,
 }) => {
   const [selectedCol, setSelectedCol] = useState(columns[0]?.name || '');
   const [operator, setOperator] = useState<FilterOperator>('equals');
@@ -148,16 +151,29 @@ export const FilterBar: React.FC<Props> = ({
           </button>
         </form>
 
-        {/* Quick Search */}
-        <div className="relative w-48">
-          <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Quick search..."
-            value={quickSearch}
-            onChange={(e) => onQuickSearchChange(e.target.value)}
-            className="w-full bg-[#141b2c] border border-[#24324f] rounded pl-7 pr-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500"
-          />
+        {/* Quick Search & Export */}
+        <div className="flex items-center gap-2">
+          <div className="relative w-40">
+            <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Quick search..."
+              value={quickSearch}
+              onChange={(e) => onQuickSearchChange(e.target.value)}
+              className="w-full bg-[#141b2c] border border-[#24324f] rounded pl-7 pr-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500"
+            />
+          </div>
+
+          {onExportCsv && (
+            <button
+              onClick={onExportCsv}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 text-xs font-medium border border-[#24324f] transition-colors"
+              title="Export filtered dataset to CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-400" />
+              <span>Export</span>
+            </button>
+          )}
         </div>
       </div>
 

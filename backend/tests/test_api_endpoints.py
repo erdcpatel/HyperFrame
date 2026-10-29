@@ -72,14 +72,31 @@ def test_ag_grid_adapter(api_sample):
     assert res_data["totalCount"] > 0
     assert "waterfall" in res_data
 
-def test_torture_benchmarks(api_sample):
+def test_export_csv(api_sample):
     payload = {
-        "dataset_id": api_sample,
-        "engines": ["duckdb", "polars"]
+        "dataset": api_sample,
+        "engine": "duckdb",
+        "select": ["trade_id", "symbol", "price"],
+        "limit": 10
     }
-    res = client.post("/api/benchmarks/torture", json=payload)
+    res = client.post("/api/query/export", json=payload)
     assert res.status_code == 200
-    scorecard = res.json()
-    assert scorecard["dataset_id"] == api_sample
-    assert len(scorecard["results"]) == 10  # 5 workloads x 2 engines
-    assert scorecard["winner_engine"] in ["duckdb", "polars"]
+    assert "text/csv" in res.headers.get("content-type", "")
+    content = res.text
+    assert "trade_id" in content
+    assert "symbol" in content
+
+def test_type_coerced_filter(api_sample):
+    # Test numeric string "500.0" against float column in DuckDB and Polars
+    for eng in ["duckdb", "polars"]:
+        payload = {
+            "dataset": api_sample,
+            "engine": eng,
+            "filters": [{"column": "price", "operator": "greater_than", "value": "500.0"}],
+            "limit": 10
+        }
+        res = client.post("/api/query/run", json=payload)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total_matching_rows"] > 0
+

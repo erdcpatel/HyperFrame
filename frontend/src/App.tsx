@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Database, Upload, PlusCircle } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { Footer } from './components/layout/Footer';
@@ -56,9 +57,6 @@ export const App: React.FC = () => {
 
       if (dList.length > 0) {
         setActiveDatasetId(dList[0].dataset_id);
-      } else {
-        // Auto-generate sample if catalog is empty
-        handleGenerateSample();
       }
 
       const engStatus = await fetchEnginesStatus();
@@ -265,8 +263,31 @@ export const App: React.FC = () => {
               <ArenaView datasetId={activeDatasetId} columns={weather.columns} />
             )
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-              <span className="text-sm font-semibold">Loading or creating dataset...</span>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center select-none">
+              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4">
+                <Database className="w-8 h-8 text-blue-400" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-200 mb-1">No Active Dataset Selected</h2>
+              <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
+                Drop your real <code className="text-blue-300 font-mono">.parquet</code> files into <code className="text-blue-300 font-mono">backend/data/</code>, or upload one directly, or generate a 500,000-row sample to explore.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => document.querySelector<HTMLInputElement>('input[type="file"]')?.click()}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-900/30 transition-all"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload Parquet File</span>
+                </button>
+                <button
+                  onClick={handleGenerateSample}
+                  disabled={generatingSample}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 text-xs font-semibold border border-[#24324f] transition-all disabled:opacity-50"
+                >
+                  <PlusCircle className="w-4 h-4 text-emerald-400" />
+                  <span>{generatingSample ? 'Generating...' : 'Generate 500k Sample'}</span>
+                </button>
+              </div>
             </div>
           )}
 

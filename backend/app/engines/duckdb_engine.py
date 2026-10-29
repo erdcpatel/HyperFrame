@@ -6,6 +6,23 @@ from backend.app.models.query import HyperQuery, HyperFilter, HyperSort, HyperAg
 from backend.app.config import settings
 from backend.app.utils.paths import to_posix_path
 
+def _format_sql_val(val: Any) -> str:
+    if val is None:
+        return "NULL"
+    if isinstance(val, (int, float)):
+        return str(val)
+    s = str(val).strip()
+    try:
+        if "." in s:
+            float(s)
+            return s
+        int(s)
+        return s
+    except ValueError:
+        pass
+    clean = s.replace("'", "''")
+    return f"'{clean}'"
+
 class DuckDBEngine(BaseEngine):
     def __init__(self):
         self._con = duckdb.connect()
@@ -25,7 +42,6 @@ class DuckDBEngine(BaseEngine):
         posix_p = to_posix_path(file_path)
 
         if query.raw_sql:
-            # User provided explicit SQL
             sql = query.raw_sql.replace(":dataset", f"read_parquet('{posix_p}')")
             if f"read_parquet('{posix_p}')" not in sql and query.dataset in sql:
                 sql = sql.replace(query.dataset, f"read_parquet('{posix_p}')")
@@ -39,27 +55,20 @@ class DuckDBEngine(BaseEngine):
             col = f'"{f.column}"'
             op = f.operator
             val = f.value
+            val_fmt = _format_sql_val(val)
 
             if op == "equals":
-                if isinstance(val, (int, float)):
-                    where_clauses.append(f"{col} = {val}")
-                else:
-                    clean_val = str(val).replace("'", "''")
-                    where_clauses.append(f"{col} = '{clean_val}'")
+                where_clauses.append(f"{col} = {val_fmt}")
             elif op == "not_equals":
-                if isinstance(val, (int, float)):
-                    where_clauses.append(f"{col} != {val}")
-                else:
-                    clean_val = str(val).replace("'", "''")
-                    where_clauses.append(f"{col} != '{clean_val}'")
+                where_clauses.append(f"{col} != {val_fmt}")
             elif op == "greater_than":
-                where_clauses.append(f"{col} > {val}")
+                where_clauses.append(f"{col} > {val_fmt}")
             elif op == "greater_than_or_equal":
-                where_clauses.append(f"{col} >= {val}")
+                where_clauses.append(f"{col} >= {val_fmt}")
             elif op == "less_than":
-                where_clauses.append(f"{col} < {val}")
+                where_clauses.append(f"{col} < {val_fmt}")
             elif op == "less_than_or_equal":
-                where_clauses.append(f"{col} <= {val}")
+                where_clauses.append(f"{col} <= {val_fmt}")
             elif op == "contains":
                 clean_val = str(val).replace("'", "''")
                 where_clauses.append(f"{col} ILIKE '%{clean_val}%'")
@@ -70,10 +79,10 @@ class DuckDBEngine(BaseEngine):
                 clean_val = str(val).replace("'", "''")
                 where_clauses.append(f"{col} ILIKE '%{clean_val}'")
             elif op == "in" and isinstance(val, list):
-                val_strs = [f"'{str(v).replace('\'', '\'\'')}'" if isinstance(v, str) else str(v) for v in val]
+                val_strs = [_format_sql_val(v) for v in val]
                 where_clauses.append(f"{col} IN ({', '.join(val_strs)})")
             elif op == "not_in" and isinstance(val, list):
-                val_strs = [f"'{str(v).replace('\'', '\'\'')}'" if isinstance(v, str) else str(v) for v in val]
+                val_strs = [_format_sql_val(v) for v in val]
                 where_clauses.append(f"{col} NOT IN ({', '.join(val_strs)})")
             elif op == "is_null":
                 where_clauses.append(f"{col} IS NULL")

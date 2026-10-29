@@ -2,6 +2,7 @@ import {
   DatasetSummary,
   DatasetWeather,
   HyperQuery,
+  HyperFilter,
   QueryResponse,
   AgGridResponse,
   SystemTelemetry,
@@ -82,6 +83,7 @@ export async function queryAgGrid(params: {
   startRow: number;
   endRow: number;
   filterModel: Record<string, any>;
+  customFilters?: HyperFilter[];
   sortModel: { colId: string; sort: 'asc' | 'desc' }[];
   quickSearch?: string;
 }): Promise<AgGridResponse> {
@@ -95,6 +97,23 @@ export async function queryAgGrid(params: {
     throw new Error(err.detail || 'AG Grid query failed');
   }
   return res.json();
+}
+
+export async function exportQueryCsv(query: HyperQuery): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/query/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(query),
+  });
+  if (!res.ok) throw new Error('Export failed');
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hyperframe_${query.dataset}_export.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 export async function explainQuery(query: HyperQuery): Promise<{ dataset: string; engine: string; plan: string }> {

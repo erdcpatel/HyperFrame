@@ -5,6 +5,19 @@ from backend.app.engines.base import BaseEngine
 from backend.app.models.query import HyperQuery
 from backend.app.utils.paths import to_posix_path
 
+def _coerce_polars_val(val: Any) -> Any:
+    if val is None:
+        return None
+    if isinstance(val, (int, float, bool)):
+        return val
+    s = str(val).strip()
+    try:
+        if "." in s:
+            return float(s)
+        return int(s)
+    except ValueError:
+        return s
+
 class PolarsEngine(BaseEngine):
     def __init__(self):
         pass
@@ -22,7 +35,7 @@ class PolarsEngine(BaseEngine):
         for f in query.filters:
             col_expr = pl.col(f.column)
             op = f.operator
-            val = f.value
+            val = _coerce_polars_val(f.value)
 
             if op == "equals":
                 predicates.append(col_expr == val)
@@ -37,15 +50,17 @@ class PolarsEngine(BaseEngine):
             elif op == "less_than_or_equal":
                 predicates.append(col_expr <= val)
             elif op == "contains":
-                predicates.append(col_expr.cast(pl.Utf8).str.contains(str(val), literal=False))
+                predicates.append(col_expr.cast(pl.Utf8).str.contains(str(f.value), literal=False))
             elif op == "starts_with":
-                predicates.append(col_expr.cast(pl.Utf8).str.starts_with(str(val)))
+                predicates.append(col_expr.cast(pl.Utf8).str.starts_with(str(f.value)))
             elif op == "ends_with":
-                predicates.append(col_expr.cast(pl.Utf8).str.ends_with(str(val)))
-            elif op == "in" and isinstance(val, list):
-                predicates.append(col_expr.is_in(val))
-            elif op == "not_in" and isinstance(val, list):
-                predicates.append(~col_expr.is_in(val))
+                predicates.append(col_expr.cast(pl.Utf8).str.ends_with(str(f.value)))
+            elif op == "in" and isinstance(f.value, list):
+                coerced_list = [_coerce_polars_val(x) for x in f.value]
+                predicates.append(col_expr.is_in(coerced_list))
+            elif op == "not_in" and isinstance(f.value, list):
+                coerced_list = [_coerce_polars_val(x) for x in f.value]
+                predicates.append(~col_expr.is_in(coerced_list))
             elif op == "is_null":
                 predicates.append(col_expr.is_null())
             elif op == "is_not_null":

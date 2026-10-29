@@ -3,7 +3,8 @@ import { FilterBar } from './FilterBar';
 import { AgGridCanvas } from './AgGridCanvas';
 import { PerspectiveCanvas } from './PerspectiveCanvas';
 import { QueryEditor } from './QueryEditor';
-import { ColumnWeather, EngineType, HyperFilter, QueryWaterfall } from '../../types';
+import { ColumnWeather, EngineType, HyperFilter, QueryWaterfall, HyperQuery } from '../../types';
+import { exportQueryCsv } from '../../services/api';
 
 interface Props {
   datasetId: string;
@@ -34,6 +35,20 @@ export const StudioView: React.FC<Props> = ({
     setFilters([]);
   };
 
+  const handleExportCsv = async () => {
+    try {
+      const q: HyperQuery = {
+        dataset: datasetId,
+        engine,
+        filters,
+        limit: 50000,
+      };
+      await exportQueryCsv(q);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-[#0a0d16]">
       {/* Top Filter & View Controls */}
@@ -47,6 +62,7 @@ export const StudioView: React.FC<Props> = ({
         onQuickSearchChange={setQuickSearch}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onExportCsv={handleExportCsv}
       />
 
       {/* Main Analytical Stage */}
