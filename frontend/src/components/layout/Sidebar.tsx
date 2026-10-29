@@ -14,7 +14,8 @@ import {
   Upload,
   RefreshCw,
   Sparkles,
-  PanelLeftClose
+  PanelLeftClose,
+  Trash2
 } from 'lucide-react';
 import { DatasetSummary, DatasetWeather, ColumnWeather } from '../../types';
 
@@ -24,11 +25,9 @@ interface Props {
   onSelectDataset: (id: string) => void;
   weather: DatasetWeather | null;
   loadingWeather: boolean;
-  onGenerateSample: () => void;
-  generatingSample: boolean;
   onScanFolder: () => void;
-  onCleanTestData: () => void;
   onUploadFile: (file: File) => void;
+  onDeleteDataset?: (id: string) => void;
   onToggleCollapse?: () => void;
 }
 
@@ -38,11 +37,9 @@ export const Sidebar: React.FC<Props> = ({
   onSelectDataset,
   weather,
   loadingWeather,
-  onGenerateSample,
-  generatingSample,
   onScanFolder,
-  onCleanTestData,
   onUploadFile,
+  onDeleteDataset,
   onToggleCollapse,
 }) => {
   const [colSearch, setColSearch] = useState('');
@@ -115,37 +112,48 @@ export const Sidebar: React.FC<Props> = ({
           </div>
         </div>
 
-        <select
-          value={activeDatasetId || ''}
-          onChange={(e) => onSelectDataset(e.target.value)}
-          className="w-full bg-[#141b2c] border border-[#24324f] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500 cursor-pointer"
-        >
-          {datasets.map((d) => (
-            <option key={d.dataset_id} value={d.dataset_id}>
-              {d.dataset_id} ({(d.row_count / 1000).toFixed(0)}k rows · {d.file_size_formatted})
-            </option>
-          ))}
-          {datasets.length === 0 && <option value="">No datasets registered</option>}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={activeDatasetId || ''}
+            onChange={(e) => onSelectDataset(e.target.value)}
+            className="flex-1 bg-[#141b2c] border border-[#24324f] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500 cursor-pointer"
+          >
+            {datasets.map((d) => (
+              <option key={d.dataset_id} value={d.dataset_id}>
+                {d.dataset_id} ({(d.row_count / 1000).toFixed(0)}k rows · {d.file_size_formatted})
+              </option>
+            ))}
+            {datasets.length === 0 && <option value="">No datasets uploaded</option>}
+          </select>
+          {activeDatasetId && onDeleteDataset && (
+            <button
+              onClick={() => onDeleteDataset(activeDatasetId)}
+              className="p-1.5 hover:bg-[#201826] rounded-lg text-slate-500 hover:text-rose-400 border border-transparent hover:border-rose-900/40 transition-colors"
+              title="Delete this dataset from catalog"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         {/* Quick Management Action Pills */}
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#1a233a] text-[10px] font-mono">
           <button
-            onClick={onGenerateSample}
-            disabled={generatingSample}
-            className="text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
+            onClick={() => fileInputRef.current?.click()}
+            className="text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+            title="Upload Parquet, CSV, or Excel file"
           >
-            <PlusCircle className="w-3 h-3" />
-            <span>{generatingSample ? 'Generating...' : '+ 500k Sample'}</span>
+            <Upload className="w-3 h-3" />
+            <span>Upload File</span>
           </button>
 
           <button
-            onClick={onCleanTestData}
-            className="text-slate-500 hover:text-rose-400 flex items-center gap-1 transition-colors"
-            title="Purge all synthetic test files and keep only real data"
+            onClick={onScanFolder}
+            className="text-slate-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
+            title="Scan backend/data/ folder for new files"
           >
-            <Sparkles className="w-3 h-3" />
-            <span>Clean Test Data</span>
+            <RefreshCw className="w-3 h-3" />
+            <span>Scan Folder</span>
           </button>
         </div>
       </div>

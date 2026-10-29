@@ -37,7 +37,6 @@ export const App: React.FC = () => {
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
   const [weather, setWeather] = useState<DatasetWeather | null>(null);
   const [loadingWeather, setLoadingWeather] = useState<boolean>(false);
-  const [generatingSample, setGeneratingSample] = useState<boolean>(false);
 
   const [waterfall, setWaterfall] = useState<QueryWaterfall | null>(null);
   const [queryString, setQueryString] = useState<string>('');
@@ -147,18 +146,22 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleGenerateSample = async () => {
-    setGeneratingSample(true);
+  const handleDeleteDataset = async (id: string) => {
+    if (!window.confirm(`Are you sure you want to delete dataset '${id}'?`)) {
+      return;
+    }
     try {
-      const newWeather = await generateSampleDataset('synthetic_trades_500k', 500000);
+      await deleteDataset(id);
       const dList = await fetchDatasets();
       setDatasets(dList);
-      setActiveDatasetId(newWeather.dataset_id);
-      setWeather(newWeather);
+      if (dList.length > 0) {
+        setActiveDatasetId(dList[0].dataset_id);
+      } else {
+        setActiveDatasetId(null);
+        setWeather(null);
+      }
     } catch (err) {
-      console.error('Generate sample failed:', err);
-    } finally {
-      setGeneratingSample(false);
+      console.error('Failed to delete dataset:', err);
     }
   };
 
@@ -172,25 +175,6 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Scan failed:', err);
-    }
-  };
-
-  const handleCleanTestData = async () => {
-    if (!window.confirm('Are you sure you want to delete all synthetic/test datasets and keep only real data?')) {
-      return;
-    }
-    try {
-      await cleanTestData();
-      const dList = await fetchDatasets();
-      setDatasets(dList);
-      if (dList.length > 0) {
-        setActiveDatasetId(dList[0].dataset_id);
-      } else {
-        setActiveDatasetId(null);
-        setWeather(null);
-      }
-    } catch (err) {
-      console.error('Clean failed:', err);
     }
   };
 
@@ -263,11 +247,9 @@ export const App: React.FC = () => {
               onSelectDataset={setActiveDatasetId}
               weather={weather}
               loadingWeather={loadingWeather}
-              onGenerateSample={handleGenerateSample}
-              generatingSample={generatingSample}
               onScanFolder={handleScanFolder}
-              onCleanTestData={handleCleanTestData}
               onUploadFile={handleUploadFile}
+              onDeleteDataset={handleDeleteDataset}
               onToggleCollapse={() => setSidebarOpen(false)}
             />
           </div>
@@ -298,18 +280,17 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => document.querySelector<HTMLInputElement>('input[type="file"]')?.click()}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-900/30 transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-900/30 transition-all hover:scale-105"
                 >
                   <Upload className="w-4 h-4" />
                   <span>Upload Parquet / CSV / Excel</span>
                 </button>
                 <button
-                  onClick={handleGenerateSample}
-                  disabled={generatingSample}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 text-xs font-semibold border border-[#24324f] transition-all disabled:opacity-50"
+                  onClick={handleScanFolder}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 text-xs font-semibold border border-[#24324f] transition-all"
                 >
-                  <PlusCircle className="w-4 h-4 text-emerald-400" />
-                  <span>{generatingSample ? 'Generating...' : 'Generate 500k Sample'}</span>
+                  <RefreshCw className="w-4 h-4 text-sky-400" />
+                  <span>Scan Folder</span>
                 </button>
               </div>
             </div>
