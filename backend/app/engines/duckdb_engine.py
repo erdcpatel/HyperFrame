@@ -93,6 +93,19 @@ class DuckDBEngine(BaseEngine):
             elif op == "is_not_null":
                 where_clauses.append(f"{col} IS NOT NULL")
 
+        # Global multi-column quick search across all text columns
+        if query.quick_search and query.quick_search.strip():
+            clean_term = query.quick_search.strip().replace("'", "''")
+            try:
+                import pyarrow.parquet as pq
+                pf = pq.ParquetFile(posix_p)
+                str_cols = [c for c in pf.schema.names if any(t in str(pf.schema_arrow.field(c).type).lower() for t in ["str", "varchar", "utf8", "text", "char"])]
+                if str_cols:
+                    concat_parts = [f"COALESCE(CAST(\"{c}\" AS VARCHAR), '')" for c in str_cols]
+                    where_clauses.append(f"({' || \' \' || '.join(concat_parts)}) ILIKE '%{clean_term}%'")
+            except Exception:
+                pass
+
         where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         # Count query

@@ -38,8 +38,13 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
     setRacing(true);
 
     const colNames = columns.map((c) => c.name);
-    const numCol = colNames.find((c) => ['notional', 'price', 'amount'].includes(c)) || colNames[0];
-    const catCol = colNames.find((c) => ['symbol', 'desk', 'status'].includes(c)) || colNames[0];
+    const numCol = colNames.find((c) => ['notional', 'price', 'amount', 'val', 'cost', 'total'].some(k => c.toLowerCase().includes(k))) ||
+      columns.find((c) => ['float', 'double', 'int'].some(t => c.dtype.toLowerCase().includes(t)))?.name || colNames[0];
+    const catCol = colNames.find((c) => ['symbol', 'desk', 'status', 'category', 'type', 'region'].some(k => c.toLowerCase().includes(k))) ||
+      columns.find((c) => ['str', 'varchar', 'utf8'].some(t => c.dtype.toLowerCase().includes(t)))?.name || colNames[0];
+
+    const catWeather = columns.find((c) => c.name === catCol);
+    const sampleNeedle = catWeather?.min_value ? String(catWeather.min_value) : 'NVDA';
 
     let baseQuery: Partial<HyperQuery> = {};
     if (workloadType === 'sort') {
@@ -49,7 +54,7 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
       };
     } else if (workloadType === 'filter') {
       baseQuery = {
-        filters: [{ column: catCol, operator: 'equals', value: 'NVDA' }],
+        filters: [{ column: catCol, operator: 'equals', value: sampleNeedle }],
         limit: 100,
       };
     } else if (workloadType === 'pivot') {

@@ -82,6 +82,7 @@ export interface HyperQuery {
   limit?: number;
   offset?: number;
   raw_sql?: string;
+  quick_search?: string;
 }
 
 export interface QueryWaterfall {

@@ -110,22 +110,6 @@ def query_ag_grid(req: AgGridRequest):
                     value=val
                 ))
 
-    # Apply Quick Search across string columns if provided
-    if req.quickSearch and req.quickSearch.strip():
-        search_term = req.quickSearch.strip()
-        try:
-            weather = catalog.get_weather(req.dataset, compute_deep_profiles=False)
-            str_cols = [c.name for c in weather.columns if "str" in c.dtype.lower() or "varchar" in c.dtype.lower() or "utf8" in c.dtype.lower()]
-            if str_cols:
-                # Add contains filter on primary string column
-                hyper_filters.append(HyperFilter(
-                    column=str_cols[0],
-                    operator="contains",
-                    value=search_term
-                ))
-        except Exception:
-            pass
-
     # 2. Translate sortModel
     hyper_sorts: list[HyperSort] = []
     for s in req.sortModel:
@@ -138,7 +122,7 @@ def query_ag_grid(req: AgGridRequest):
     offset = max(0, req.startRow)
     limit = max(1, req.endRow - req.startRow)
 
-    # 4. Construct HyperQuery
+    # 4. Construct HyperQuery with multi-column quick_search
     query = HyperQuery(
         dataset=req.dataset,
         engine=req.engine,
@@ -146,7 +130,8 @@ def query_ag_grid(req: AgGridRequest):
         filters=hyper_filters,
         orderBy=hyper_sorts,
         offset=offset,
-        limit=limit
+        limit=limit,
+        quick_search=req.quickSearch.strip() if req.quickSearch and req.quickSearch.strip() else None
     )
 
     profiler = QueryProfiler(telemetry_monitor)

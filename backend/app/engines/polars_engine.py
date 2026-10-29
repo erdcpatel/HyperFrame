@@ -50,7 +50,7 @@ class PolarsEngine(BaseEngine):
             elif op == "less_than_or_equal":
                 predicates.append(col_expr <= val)
             elif op == "contains":
-                predicates.append(col_expr.cast(pl.Utf8).str.contains(str(f.value), literal=False))
+                predicates.append(col_expr.cast(pl.Utf8).str.contains(str(f.value), literal=True))
             elif op == "starts_with":
                 predicates.append(col_expr.cast(pl.Utf8).str.starts_with(str(f.value)))
             elif op == "ends_with":
@@ -65,6 +65,14 @@ class PolarsEngine(BaseEngine):
                 predicates.append(col_expr.is_null())
             elif op == "is_not_null":
                 predicates.append(col_expr.is_not_null())
+
+        # Global multi-column quick search across all text columns
+        if query.quick_search and query.quick_search.strip():
+            schema = lf.collect_schema()
+            str_cols = [name for name, dtype in schema.items() if dtype in [pl.Utf8, pl.String, pl.Categorical]]
+            if str_cols:
+                concat_expr = pl.concat_str([pl.col(c).cast(pl.Utf8).fill_null("") for c in str_cols], separator=" ")
+                predicates.append(concat_expr.str.contains(query.quick_search.strip(), literal=True))
 
         for p in predicates:
             lf = lf.filter(p)

@@ -89,3 +89,15 @@ def test_duckdb_multi_dataset_join(sample_dataset):
     assert "secondary_price" in table.column_names
 
     catalog.delete_dataset("test_secondary_ds")
+
+def test_duckdb_multi_column_quick_search(sample_dataset):
+    engine = DuckDBEngine()
+    q = HyperQuery(
+        dataset="test_duckdb_sample",
+        quick_search="APAC",
+        limit=10
+    )
+    table, sql, total_rows = engine.execute_query(q, sample_dataset)
+    assert total_rows > 0
+    desks = table["desk"].to_pylist()
+    assert all("APAC" in d for d in desks)

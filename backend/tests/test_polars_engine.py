@@ -63,3 +63,28 @@ def test_polars_explain(sample_dataset):
     q = HyperQuery(dataset="test_polars_sample", engine="polars", limit=10)
     plan = engine.explain(q, sample_dataset)
     assert "SCAN" in plan or "PARQUET" in plan or "PROJECT" in plan
+
+def test_polars_special_character_filter(sample_dataset):
+    engine = PolarsEngine()
+    q = HyperQuery(
+        dataset="test_polars_sample",
+        engine="polars",
+        filters=[HyperFilter(column="symbol", operator="contains", value="(US)")],
+        limit=10
+    )
+    # Must execute safely without Regex syntax crash
+    table, plan, total_rows = engine.execute_query(q, sample_dataset)
+    assert table.num_rows == 0
+
+def test_polars_multi_column_quick_search(sample_dataset):
+    engine = PolarsEngine()
+    q = HyperQuery(
+        dataset="test_polars_sample",
+        engine="polars",
+        quick_search="APAC",
+        limit=10
+    )
+    table, plan, total_rows = engine.execute_query(q, sample_dataset)
+    assert total_rows > 0
+    desks = table["desk"].to_pylist()
+    assert all("APAC" in d for d in desks)

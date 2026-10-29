@@ -40,6 +40,13 @@ export const FilterBar: React.FC<Props> = ({
   const [operator, setOperator] = useState<FilterOperator>('equals');
   const [filterVal, setFilterVal] = useState('');
 
+  // Sync selected column when active dataset columns change
+  React.useEffect(() => {
+    if (columns.length > 0 && !columns.some((c) => c.name === selectedCol)) {
+      setSelectedCol(columns[0].name);
+    }
+  }, [columns]);
+
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCol) return;

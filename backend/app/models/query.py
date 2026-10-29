@@ -47,6 +47,7 @@ class HyperQuery(BaseModel):
     limit: int = 100
     offset: int = 0
     raw_sql: Optional[str] = None  # SQL escape hatch
+    quick_search: Optional[str] = None  # Global multi-column substring search
 
 class AgGridFilterItem(BaseModel):
     filterType: Optional[str] = "text"

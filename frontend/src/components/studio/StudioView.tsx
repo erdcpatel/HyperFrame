@@ -41,6 +41,7 @@ export const StudioView: React.FC<Props> = React.memo(({
         dataset: datasetId,
         engine,
         filters,
+        quick_search: quickSearch.trim() || undefined,
         limit: 50000,
       };
       await exportQueryCsv(q);
