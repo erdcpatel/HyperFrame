@@ -31,6 +31,10 @@ frontend/.vite/
 # Workspace Data & Spill
 backend/data/*.parquet
 backend/data/*.pqt
+backend/data/*.csv
+backend/data/*.tsv
+backend/data/*.xlsx
+backend/data/*.xls
 *.duckdb_spill*
 *hyperframe_spill*
 
