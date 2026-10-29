@@ -6,6 +6,7 @@
     "build": "cd frontend && npx --yes vite build",
     "dev": "cd frontend && npx --yes vite",
     "start": "python run.py",
-    "clean": "python clean.py"
+    "clean": "python clean.py",
+    "test:ui": "node tests/ui_test.mjs"
   }
 }

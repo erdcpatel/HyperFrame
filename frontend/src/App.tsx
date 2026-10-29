@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Database, Upload, PlusCircle, RefreshCw } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
