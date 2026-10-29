@@ -39,3 +39,5 @@ class DatasetSummary(BaseModel):
     column_count: int
     file_size_formatted: str
     created_at: str
+    source: Optional[str] = "local"
+    path: Optional[str] = ""

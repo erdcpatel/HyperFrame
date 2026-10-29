@@ -11,6 +11,7 @@ from backend.app.api.query import router as query_router
 from backend.app.api.engines import router as engines_router
 from backend.app.api.benchmarks import router as benchmarks_router
 from backend.app.api.telemetry import router as telemetry_router
+from backend.app.api.s3 import router as s3_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -50,6 +51,7 @@ app.include_router(query_router)
 app.include_router(engines_router)
 app.include_router(benchmarks_router)
 app.include_router(telemetry_router)
+app.include_router(s3_router)
 
 @app.get("/api/health")
 def health_check():

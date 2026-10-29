@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Sparkles,
   PanelLeftClose,
-  Trash2
+  Trash2,
+  Cloud
 } from 'lucide-react';
 import { DatasetSummary, DatasetWeather, ColumnWeather } from '../../types';
 
@@ -29,6 +30,7 @@ interface Props {
   onUploadFile: (file: File) => void;
   onDeleteDataset?: (id: string) => void;
   onToggleCollapse?: () => void;
+  onOpenS3Modal?: () => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -41,6 +43,7 @@ export const Sidebar: React.FC<Props> = ({
   onUploadFile,
   onDeleteDataset,
   onToggleCollapse,
+  onOpenS3Modal,
 }) => {
   const [colSearch, setColSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +82,15 @@ export const Sidebar: React.FC<Props> = ({
             <span>Datasets Catalog</span>
           </div>
           <div className="flex items-center gap-1">
+            {onOpenS3Modal && (
+              <button
+                onClick={onOpenS3Modal}
+                className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-amber-400 transition-colors"
+                title="Connect & Browse AWS S3 Buckets / Folders"
+              >
+                <Cloud className="w-3.5 h-3.5 text-amber-400" />
+              </button>
+            )}
             <button
               onClick={onScanFolder}
               className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-sky-400 transition-colors"
@@ -118,11 +130,14 @@ export const Sidebar: React.FC<Props> = ({
             onChange={(e) => onSelectDataset(e.target.value)}
             className="flex-1 bg-[#141b2c] border border-[#24324f] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500 cursor-pointer"
           >
-            {datasets.map((d) => (
-              <option key={d.dataset_id} value={d.dataset_id}>
-                {d.dataset_id} ({(d.row_count / 1000).toFixed(0)}k rows · {d.file_size_formatted})
-              </option>
-            ))}
+            {datasets.map((d) => {
+              const isS3 = d.source === 's3' || d.path?.startsWith('s3://') || d.file_name.startsWith('☁️');
+              return (
+                <option key={d.dataset_id} value={d.dataset_id}>
+                  {isS3 ? `☁️ ${d.dataset_id}` : d.dataset_id} ({(d.row_count / 1000).toFixed(0)}k rows · {d.file_size_formatted})
+                </option>
+              );
+            })}
             {datasets.length === 0 && <option value="">No datasets uploaded</option>}
           </select>
           {activeDatasetId && onDeleteDataset && (
@@ -147,6 +162,17 @@ export const Sidebar: React.FC<Props> = ({
             <span>Upload File</span>
           </button>
 
+          {onOpenS3Modal && (
+            <button
+              onClick={onOpenS3Modal}
+              className="text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
+              title="Connect and ingest from AWS S3 Lakehouse"
+            >
+              <Cloud className="w-3 h-3" />
+              <span>S3 Cloud</span>
+            </button>
+          )}
+
           <button
             onClick={onScanFolder}
             className="text-slate-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
@@ -161,9 +187,17 @@ export const Sidebar: React.FC<Props> = ({
       {/* Data Weather Card */}
       {weather && (
         <div className="p-3 border-b border-[#1f2b45] bg-[#0f1524]">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <PieChart className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Data Weather</span>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <PieChart className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Data Weather</span>
+            </div>
+            {(weather.path.startsWith('s3://') || weather.file_name.startsWith('☁️')) && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <Cloud className="w-2.5 h-2.5" />
+                <span>S3 Lakehouse</span>
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">

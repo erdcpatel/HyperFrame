@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Database, Upload, PlusCircle, RefreshCw } from 'lucide-react';
+import { Database, Upload, PlusCircle, RefreshCw, Cloud } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { Footer } from './components/layout/Footer';
@@ -7,6 +7,7 @@ import { StudioView } from './components/studio/StudioView';
 import { ArenaView } from './components/arena/ArenaView';
 import { XRayDrawer } from './components/inspector/XRayDrawer';
 import { TortureModal } from './components/arena/TortureModal';
+import { S3ManagerModal } from './components/s3/S3ManagerModal';
 
 import {
   DatasetSummary,
@@ -52,6 +53,7 @@ export const App: React.FC = () => {
     xrayOpenRef.current = xrayOpen;
   }, [xrayOpen]);
   const [tortureOpen, setTortureOpen] = useState<boolean>(false);
+  const [s3ModalOpen, setS3ModalOpen] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar full screen
@@ -274,6 +276,7 @@ export const App: React.FC = () => {
               onUploadFile={handleUploadFile}
               onDeleteDataset={handleDeleteDataset}
               onToggleCollapse={() => setSidebarOpen(false)}
+              onOpenS3Modal={() => setS3ModalOpen(true)}
             />
           </div>
         </div>
@@ -307,6 +310,13 @@ export const App: React.FC = () => {
                 >
                   <Upload className="w-4 h-4" />
                   <span>Upload Parquet / CSV / Excel</span>
+                </button>
+                <button
+                  onClick={() => setS3ModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-all hover:scale-105"
+                >
+                  <Cloud className="w-4 h-4 text-amber-400" />
+                  <span>Connect S3 Bucket</span>
                 </button>
                 <button
                   onClick={handleScanFolder}
@@ -349,6 +359,18 @@ export const App: React.FC = () => {
           datasetId={activeDatasetId}
         />
       )}
+
+      {/* S3 Lakehouse & Multi-Bucket Manager Modal */}
+      <S3ManagerModal
+        isOpen={s3ModalOpen}
+        onClose={() => setS3ModalOpen(false)}
+        onDatasetRegistered={async (newWeather) => {
+          const dList = await fetchDatasets();
+          setDatasets(dList);
+          setActiveDatasetId(newWeather.dataset_id);
+          setWeather(newWeather);
+        }}
+      />
     </div>
   );
 };

@@ -95,7 +95,8 @@ class PerspectiveEngine(BaseEngine):
         estimated_ram_mb = file_size_mb * 7
         max_allowed_mb = MAX_PERSPECTIVE_RAM_GB * 1024
 
-        should_pushdown = (
+        is_s3 = file_path.startswith("s3://")
+        should_pushdown = is_s3 or (
             file_size_mb >= PSP_PUSHDOWN_THRESHOLD_MB and (query.groupBy or query.aggregations)
         ) or (estimated_ram_mb > max_allowed_mb or estimated_ram_mb > (avail_mb + 512))
 

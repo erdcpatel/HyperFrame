@@ -32,6 +32,7 @@ backend/data/*
 !backend/data/.gitkeep
 *.duckdb_spill*
 *hyperframe_spill*
+snaps/
 
 # OS
 .DS_Store

@@ -38,9 +38,29 @@ class DuckDBEngine(BaseEngine):
         self._con.execute(f"PRAGMA threads={settings.DUCKDB_THREADS};")
         self._con.execute(f"PRAGMA memory_limit='{settings.DUCKDB_MEMORY_LIMIT}';")
         self._con.execute(f"PRAGMA temp_directory='{spill_dir}';")
+        try:
+            self._con.execute("INSTALL httpfs; LOAD httpfs;")
+        except Exception:
+            pass
+
+    def _apply_s3_credentials(self, file_path: str, dataset_id: str):
+        if file_path.startswith("s3://"):
+            from backend.app.core.catalog import catalog
+            from backend.app.core.s3_manager import s3_manager
+            cat_entry = catalog._read_catalog().get(dataset_id, {})
+            profile_id = cat_entry.get("s3_profile_id")
+            if profile_id:
+                profile = s3_manager.get_profile(profile_id)
+                if profile:
+                    self._con.execute(f"SET s3_region = '{profile.region}';")
+                    self._con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
+                    self._con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+                    if profile.endpoint_url:
+                        self._con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
+                        self._con.execute("SET s3_url_style = 'path';")
 
     def _compile_sql(self, query: HyperQuery, file_path: str, count_only: bool = False) -> str:
-        posix_p = to_posix_path(file_path)
+        posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
 
         if query.raw_sql:
             sql = query.raw_sql.replace(":dataset", f"read_parquet('{posix_p}')")
@@ -172,11 +192,12 @@ class DuckDBEngine(BaseEngine):
             cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW ":dataset" AS SELECT * FROM read_parquet(\'{posix_act}\');')
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
-        posix_p = to_posix_path(file_path)
+        self._apply_s3_credentials(file_path, query.dataset)
+        posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
 
         # 1. Total matching rows count
         # Ultra-fast path: If no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
-        if not query.filters and not query.raw_sql and not query.groupBy:
+        if not file_path.startswith("s3://") and not query.filters and not query.raw_sql and not query.groupBy and not query.quick_search:
             try:
                 import pyarrow.parquet as pq
                 total_rows = pq.ParquetFile(posix_p).metadata.num_rows
@@ -209,6 +230,7 @@ class DuckDBEngine(BaseEngine):
             data_cursor.close()
 
     def explain(self, query: HyperQuery, file_path: str) -> str:
+        self._apply_s3_credentials(file_path, query.dataset)
         cursor = self._con.cursor()
         try:
             self._sync_catalog_views(cursor, query.dataset, file_path)

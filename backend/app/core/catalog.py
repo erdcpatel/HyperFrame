@@ -48,7 +48,9 @@ class DatasetCatalog:
                 row_count=meta.get("row_count", 0),
                 column_count=meta.get("column_count", 0),
                 file_size_formatted=meta.get("file_size_formatted", "0 B"),
-                created_at=meta.get("created_at", "")
+                created_at=meta.get("created_at", ""),
+                source=meta.get("source", "local"),
+                path=meta.get("path", "")
             ))
         return summaries
 
@@ -221,6 +223,71 @@ class DatasetCatalog:
             con.close()
 
         return weather
+
+    def register_s3_dataset(self, dataset_id: str, profile_id: str, s3_uri: str, description: Optional[str] = None) -> DatasetWeather:
+        """
+        Registers an S3 multi-file folder as a unified dataset.
+        Extracts schema and metadata directly via DuckDB httpfs zero-download range requests.
+        """
+        from backend.app.core.s3_manager import s3_manager
+        profile = s3_manager.get_profile(profile_id)
+        if not profile:
+            raise ValueError(f"S3 Profile '{profile_id}' not found.")
+
+        con = duckdb.connect()
+        try:
+            con.execute("INSTALL httpfs; LOAD httpfs;")
+            con.execute(f"SET s3_region = '{profile.region}';")
+            con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
+            con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+            if profile.endpoint_url:
+                con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
+                con.execute("SET s3_url_style = 'path';")
+
+            # 1. Row count & Columns via DuckDB DESCRIBE
+            desc_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{s3_uri}') LIMIT 0;").df()
+            count_res = con.execute(f"SELECT COUNT(*) FROM read_parquet('{s3_uri}');").fetchone()
+            row_count = int(count_res[0]) if count_res else 0
+
+            columns = []
+            for _, r in desc_df.iterrows():
+                col_name = str(r["column_name"])
+                dtype = str(r["column_type"])
+                columns.append(ColumnWeather(
+                    name=col_name,
+                    dtype=dtype,
+                    null_count=0,
+                    null_percentage=0.0,
+                    approx_unique=0
+                ))
+
+            weather = DatasetWeather(
+                dataset_id=dataset_id,
+                file_name=f"☁️ {s3_uri.split('/')[-2] or dataset_id}",
+                path=s3_uri,
+                file_size_bytes=0,
+                file_size_formatted="Remote S3 Lakehouse",
+                row_count=row_count,
+                column_count=len(columns),
+                row_groups=1,
+                est_uncompressed_bytes=row_count * len(columns) * 8,
+                est_uncompressed_formatted=format_bytes(row_count * len(columns) * 8),
+                compression_ratio=3.5,
+                columns=columns
+            )
+
+            # Save in catalog with s3 profile metadata
+            cat = self._read_catalog()
+            cat_entry = weather.model_dump()
+            cat_entry["source"] = "s3"
+            cat_entry["s3_profile_id"] = profile_id
+            cat_entry["description"] = description
+            cat[dataset_id] = cat_entry
+            self._write_catalog(cat)
+
+            return weather
+        finally:
+            con.close()
 
     def delete_dataset(self, dataset_id: str):
         catalog = self._read_catalog()

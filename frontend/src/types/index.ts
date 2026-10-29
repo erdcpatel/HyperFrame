@@ -36,6 +36,8 @@ export interface DatasetSummary {
   column_count: number;
   file_size_formatted: string;
   created_at: string;
+  source?: string;
+  path?: string;
 }
 
 export type FilterOperator =
@@ -156,4 +158,38 @@ export interface TortureScorecard {
   results: TortureWorkloadResult[];
   winner_engine?: string;
   summary: string;
+}
+
+export interface S3ProfilePublic {
+  id: string;
+  name: string;
+  bucket: string;
+  region: string;
+  access_key_masked: string;
+  endpoint_url?: string;
+  created_at: string;
+  status?: string;
+  latency_ms?: number;
+  error_message?: string;
+}
+
+export interface S3FileItem {
+  name: string;
+  key: string;
+  size_bytes: number;
+  size_formatted: string;
+  last_modified: string;
+  is_parquet: boolean;
+}
+
+export interface S3BrowseResponse {
+  profile_id: string;
+  bucket: string;
+  prefix: string;
+  subfolders: string[];
+  files: S3FileItem[];
+  total_files_in_folder: number;
+  total_bytes_in_folder: number;
+  total_bytes_formatted: string;
+  is_partitioned: boolean;
 }

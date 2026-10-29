@@ -27,8 +27,26 @@ class PolarsEngine(BaseEngine):
         return "polars"
 
     def _build_lazy_plan(self, query: HyperQuery, file_path: str, count_only: bool = False) -> pl.LazyFrame:
-        posix_p = to_posix_path(file_path)
-        lf = pl.scan_parquet(posix_p)
+        if file_path.startswith("s3://"):
+            from backend.app.core.catalog import catalog
+            from backend.app.core.s3_manager import s3_manager
+            cat_entry = catalog._read_catalog().get(query.dataset, {})
+            profile_id = cat_entry.get("s3_profile_id")
+            storage_options = None
+            if profile_id:
+                profile = s3_manager.get_profile(profile_id)
+                if profile:
+                    storage_options = {
+                        "aws_access_key_id": profile.access_key_id,
+                        "aws_secret_access_key": profile.secret_access_key,
+                        "aws_region": profile.region
+                    }
+                    if profile.endpoint_url:
+                        storage_options["aws_endpoint"] = profile.endpoint_url
+            lf = pl.scan_parquet(file_path, storage_options=storage_options)
+        else:
+            posix_p = to_posix_path(file_path)
+            lf = pl.scan_parquet(posix_p)
 
         # Filters
         predicates = []

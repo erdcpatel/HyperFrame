@@ -194,3 +194,77 @@ export async function fetchTelemetrySnapshot(): Promise<SystemTelemetry> {
   if (!res.ok) throw new Error('Failed to fetch telemetry');
   return res.json();
 }
+
+// S3 Lakehouse Services
+export async function fetchS3Profiles(): Promise<S3ProfilePublic[]> {
+  const res = await fetch(`${BASE_URL}/api/s3/profiles`);
+  if (!res.ok) throw new Error('Failed to fetch S3 profiles');
+  return res.json();
+}
+
+export async function saveS3Profile(profile: any): Promise<S3ProfilePublic> {
+  const res = await fetch(`${BASE_URL}/api/s3/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to save S3 profile');
+  }
+  return res.json();
+}
+
+export async function deleteS3Profile(profileId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/s3/profiles/${profileId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete S3 profile');
+}
+
+export async function testS3Connection(profileId: string): Promise<{ success: boolean; latency_ms: number; message: string }> {
+  const res = await fetch(`${BASE_URL}/api/s3/profiles/${profileId}/test`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Connection test failed');
+  }
+  return res.json();
+}
+
+export async function browseS3Folder(profileId: string, prefix: string = ''): Promise<S3BrowseResponse> {
+  const query = new URLSearchParams({ profile_id: profileId, prefix });
+  const res = await fetch(`${BASE_URL}/api/s3/browse?${query.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to browse S3 folder');
+  }
+  return res.json();
+}
+
+export async function previewS3Data(req: { profile_id: string; folder_prefix: string; recursive_glob?: boolean; limit?: number }) {
+  const res = await fetch(`${BASE_URL}/api/s3/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to preview S3 data');
+  }
+  return res.json();
+}
+
+export async function registerS3Dataset(req: { dataset_id: string; profile_id: string; folder_prefix: string; recursive_glob?: boolean; description?: string }): Promise<DatasetWeather> {
+  const res = await fetch(`${BASE_URL}/api/s3/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to register S3 dataset');
+  }
+  return res.json();
+}
