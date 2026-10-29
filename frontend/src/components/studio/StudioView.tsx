@@ -13,7 +13,7 @@ interface Props {
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
 }
 
-export const StudioView: React.FC<Props> = ({
+export const StudioView: React.FC<Props> = React.memo(({
   datasetId,
   engine,
   columns,
@@ -97,4 +97,4 @@ export const StudioView: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

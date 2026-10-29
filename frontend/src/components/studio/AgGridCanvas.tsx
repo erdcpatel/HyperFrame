@@ -16,7 +16,39 @@ interface Props {
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
 }
 
-export const AgGridCanvas: React.FC<Props> = ({
+import React, { useEffect, useMemo, useRef } from 'react';
+import { AgGridReact } from 'ag-grid-react';
+import { ColDef, IDatasource, IGetRowsParams } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+import { ColumnWeather, EngineType, HyperFilter, QueryWaterfall } from '../../types';
+import { queryAgGrid } from '../../services/api';
+
+interface Props {
+  datasetId: string;
+  engine: EngineType;
+  columns: ColumnWeather[];
+  filters: HyperFilter[];
+  quickSearch: string;
+  onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
+}
+
+// Stable defaultColDef defined outside component to prevent AG Grid recreation on parent re-renders
+const DEFAULT_COL_DEF: ColDef = {
+  flex: 1,
+  minWidth: 120,
+  sortable: true,
+  filter: true,
+  resizable: true,
+  filterParams: {
+    buttons: ['apply', 'clear'],
+    closeOnApply: false,
+    debounceMs: 200,
+  },
+};
+
+export const AgGridCanvas: React.FC<Props> = React.memo(({
   datasetId,
   engine,
   columns,
@@ -26,6 +58,12 @@ export const AgGridCanvas: React.FC<Props> = ({
 }) => {
   const gridRef = useRef<AgGridReact>(null);
 
+  // Keep a stable ref for onWaterfallUpdate so datasource does not re-instantiate on telemetry ticks
+  const onWaterfallUpdateRef = useRef(onWaterfallUpdate);
+  useEffect(() => {
+    onWaterfallUpdateRef.current = onWaterfallUpdate;
+  }, [onWaterfallUpdate]);
+
   // Derive column definitions from dataset schema
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map((col) => {
@@ -34,7 +72,7 @@ export const AgGridCanvas: React.FC<Props> = ({
         field: col.name,
         headerName: col.name,
         sortable: true,
-        filter: true,
+        filter: isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter',
         resizable: true,
         type: isNum ? 'numericColumn' : undefined,
         valueFormatter: isNum && col.name.includes('notional')
@@ -68,7 +106,9 @@ export const AgGridCanvas: React.FC<Props> = ({
             client_render_ms: Math.round(tRender),
           };
 
-          onWaterfallUpdate(waterfallWithRender, res.query_string, res.totalCount, res.rows.length);
+          if (onWaterfallUpdateRef.current) {
+            onWaterfallUpdateRef.current(waterfallWithRender, res.query_string, res.totalCount, res.rows.length);
+          }
           params.successCallback(res.rows, res.totalCount);
         } catch (err) {
           console.error('AG Grid datasource error:', err);
@@ -76,7 +116,7 @@ export const AgGridCanvas: React.FC<Props> = ({
         }
       },
     };
-  }, [datasetId, engine, filters, quickSearch, onWaterfallUpdate]);
+  }, [datasetId, engine, filters, quickSearch]);
 
   useEffect(() => {
     if (gridRef.current?.api) {
@@ -96,11 +136,9 @@ export const AgGridCanvas: React.FC<Props> = ({
         maxBlocksInCache={10}
         rowHeight={32}
         headerHeight={34}
-        defaultColDef={{
-          flex: 1,
-          minWidth: 120,
-        }}
+        defaultColDef={DEFAULT_COL_DEF}
+        popupParent={typeof document !== 'undefined' ? document.body : undefined}
       />
     </div>
   );
-};
+});
