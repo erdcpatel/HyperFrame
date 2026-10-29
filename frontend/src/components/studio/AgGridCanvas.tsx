@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, IDatasource, IGetRowsParams } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 import { ColumnWeather, EngineType, HyperFilter, QueryWaterfall } from '../../types';
 import { queryAgGrid } from '../../services/api';
@@ -65,11 +66,14 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
     });
   }, [columns]);
 
+  const [gridError, setGridError] = useState<string | null>(null);
+
   // Infinite row model datasource
   const datasource: IDatasource = useMemo(() => {
     return {
       getRows: async (params: IGetRowsParams) => {
         try {
+          setGridError(null);
           const tStart = performance.now();
           const res = await queryAgGrid({
             dataset: datasetId,
@@ -92,8 +96,10 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
             onWaterfallUpdateRef.current(waterfallWithRender, res.query_string, res.totalCount, res.rows.length);
           }
           params.successCallback(res.rows, res.totalCount);
-        } catch (err) {
+        } catch (err: any) {
+          const detail = err.response?.data?.detail || err.message || 'Engine query failed to complete';
           console.error('AG Grid datasource error:', err);
+          setGridError(detail);
           params.failCallback();
         }
       },
@@ -107,7 +113,32 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
   }, [datasource]);
 
   return (
-    <div className="w-full h-full ag-theme-alpine-dark flex-1">
+    <div className="w-full h-full ag-theme-alpine-dark flex-1 relative">
+      {gridError && (
+        <div className="absolute inset-0 bg-[#0a0d16]/95 backdrop-blur-md z-30 flex flex-col items-center justify-center p-6 text-center select-none">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4 shadow-lg shadow-amber-950/30">
+            <AlertCircle className="w-7 h-7 text-amber-400" />
+          </div>
+          <h3 className="text-base font-bold text-slate-100 mb-2">
+            Engine Halted: <span className="uppercase text-amber-400">{engine}</span>
+          </h3>
+          <div className="max-w-xl mb-4 font-mono text-xs text-amber-200/90 bg-[#121929] border border-[#24324f] rounded-lg p-3 text-left leading-relaxed">
+            {gridError}
+          </div>
+          {engine === 'perspective' && (
+            <p className="text-xs text-slate-400 max-w-lg mb-6 leading-relaxed">
+              Perspective 5.x is an <b>In-Memory C++</b> engine requiring all records to be loaded into RAM (~3–5 GB for an 82 MB compressed Parquet file). For large datasets, use out-of-core streaming engines.
+            </p>
+          )}
+          <button
+            onClick={() => setGridError(null)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#18233c] hover:bg-[#202f50] text-slate-200 text-xs font-semibold border border-[#2a3c61] transition-all"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
+            <span>Dismiss & Retry</span>
+          </button>
+        </div>
+      )}
       <AgGridReact
         ref={gridRef}
         columnDefs={colDefs}

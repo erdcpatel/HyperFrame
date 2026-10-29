@@ -1,5 +1,7 @@
 import gc
+from pathlib import Path
 from typing import Tuple, Optional, Any
+import psutil
 import perspective
 from perspective.handlers.starlette import PerspectiveStarletteHandler
 import pyarrow as pa
@@ -33,11 +35,24 @@ class PerspectiveEngine(BaseEngine):
 
         posix_p = to_posix_path(file_path)
         try:
+            file_size_mb = Path(posix_p).stat().st_size / (1024 * 1024)
+            # Check available system RAM before attempting in-memory ingestion
+            mem = psutil.virtual_memory()
+            avail_mb = mem.available / (1024 * 1024)
+            # Perspective C++ internal index + Arrow uncompressed memory requires ~6-8x the compressed parquet file size
+            estimated_ram_mb = file_size_mb * 7
+
+            if estimated_ram_mb > avail_mb:
+                raise RuntimeError(
+                    f"Dataset is {file_size_mb:.1f} MB on disk and requires ~{estimated_ram_mb:.0f} MB RAM in Perspective C++. "
+                    f"Only {avail_mb:.0f} MB available. Switch to DuckDB 2.0 (Out-of-Core) or Polars 2.x (Streaming) which process this dataset directly from disk."
+                )
+
             arrow_table = pq.read_table(posix_p)
             table = self._client.table(arrow_table, name=dataset_id)
             self._active_tables[dataset_id] = table
         except Exception as e:
-            raise RuntimeError(f"Perspective In-Memory Load Error on '{dataset_id}': {str(e)}. Dataset may be too large to fit in physical RAM for in-memory C++ hosting.")
+            raise RuntimeError(f"Perspective In-Memory Load Error on '{dataset_id}': {str(e)}")
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         """
