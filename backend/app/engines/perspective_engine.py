@@ -1,4 +1,5 @@
 import gc
+import os
 from pathlib import Path
 from typing import Tuple, Optional, Any
 import psutil
@@ -10,6 +11,9 @@ import pyarrow.parquet as pq
 from backend.app.engines.base import BaseEngine
 from backend.app.models.query import HyperQuery
 from backend.app.utils.paths import to_posix_path
+
+# Allow high-memory allocation for Perspective C++ in-memory columnar tables (default 12.0 GB)
+MAX_PERSPECTIVE_RAM_GB = float(os.getenv("HYPERFRAME_MAX_PERSPECTIVE_RAM_GB", "12.0"))
 
 class PerspectiveEngine(BaseEngine):
     def __init__(self):
@@ -27,7 +31,7 @@ class PerspectiveEngine(BaseEngine):
 
     def load_dataset(self, dataset_id: str, file_path: str) -> None:
         """
-        Loads the Parquet file into an in-memory C++ Perspective Table.
+        Loads the Parquet file into an in-memory C++ Perspective Table using chunked batch ingestion.
         Tracks table instance for explicit deletion on unload.
         """
         if dataset_id in self._active_tables:
@@ -41,15 +45,29 @@ class PerspectiveEngine(BaseEngine):
             avail_mb = mem.available / (1024 * 1024)
             # Perspective C++ internal index + Arrow uncompressed memory requires ~6-8x the compressed parquet file size
             estimated_ram_mb = file_size_mb * 7
+            max_allowed_mb = MAX_PERSPECTIVE_RAM_GB * 1024
 
-            if estimated_ram_mb > avail_mb:
+            if estimated_ram_mb > max_allowed_mb or estimated_ram_mb > (avail_mb + 512):
                 raise RuntimeError(
                     f"Dataset is {file_size_mb:.1f} MB on disk and requires ~{estimated_ram_mb:.0f} MB RAM in Perspective C++. "
-                    f"Only {avail_mb:.0f} MB available. Switch to DuckDB 2.0 (Out-of-Core) or Polars 2.x (Streaming) which process this dataset directly from disk."
+                    f"Available RAM: {avail_mb:.0f} MB (Configured Max Limit: {max_allowed_mb:.0f} MB). "
+                    f"Switch to DuckDB 2.0 (Out-of-Core) or Polars 2.x (Streaming) which process this dataset directly from disk."
                 )
 
-            arrow_table = pq.read_table(posix_p)
-            table = self._client.table(arrow_table, name=dataset_id)
+            parquet_file = pq.ParquetFile(posix_p)
+            # Ingest in chunks of 100,000 rows to prevent peak memory fragmentation and C++ allocation SIGSEGV
+            batch_iter = parquet_file.iter_batches(batch_size=100_000)
+            first_batch = next(batch_iter, None)
+            if first_batch is None:
+                raise RuntimeError(f"Dataset '{dataset_id}' contains no records.")
+
+            first_table = pa.Table.from_batches([first_batch])
+            table = self._client.table(first_table, name=dataset_id)
+
+            for batch in batch_iter:
+                batch_tbl = pa.Table.from_batches([batch])
+                table.update(batch_tbl)
+
             self._active_tables[dataset_id] = table
         except Exception as e:
             raise RuntimeError(f"Perspective In-Memory Load Error on '{dataset_id}': {str(e)}")
@@ -113,22 +131,19 @@ class PerspectiveEngine(BaseEngine):
                 view_config["sort"] = sort_list
 
         view = table.view(**view_config)
-        try:
-            total_rows = view.num_rows()
-            # Pushdown window slicing directly into Perspective C++ serialization (avoids serializing millions of rows)
-            if query.limit > 0:
-                end_r = min(total_rows, query.offset + query.limit)
-                arrow_bytes = view.to_arrow(start_row=query.offset, end_row=end_r)
-            else:
-                arrow_bytes = view.to_arrow()
+        total_rows = view.num_rows()
+        # Pushdown window slicing directly into Perspective C++ serialization (avoids serializing millions of rows)
+        if query.limit > 0:
+            end_r = min(total_rows, query.offset + query.limit)
+            arrow_bytes = view.to_arrow(start_row=query.offset, end_row=end_r)
+        else:
+            arrow_bytes = view.to_arrow()
 
-            reader = pa.ipc.open_stream(arrow_bytes)
-            res_table = reader.read_all()
+        reader = pa.ipc.open_stream(arrow_bytes)
+        res_table = reader.read_all().combine_chunks()
 
-            plan_str = f"Perspective In-Memory View (Columns: {len(res_table.column_names)}, Returned: {res_table.num_rows}, Total: {total_rows})"
-            return res_table, plan_str, total_rows
-        finally:
-            view.delete()
+        plan_str = f"Perspective In-Memory View (Columns: {len(res_table.column_names)}, Returned: {res_table.num_rows}, Total: {total_rows})"
+        return res_table, plan_str, total_rows
 
     def explain(self, query: HyperQuery, file_path: str) -> str:
         return f"Perspective In-Memory Engine: Direct C++ Apache Arrow buffer execution on hosted table '{query.dataset}'."

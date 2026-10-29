@@ -152,6 +152,33 @@ export async function purgeMemory(): Promise<{ server_rss_mb: number }> {
   return res.json();
 }
 
+export interface TortureStatusResponse {
+  is_running: boolean;
+  dataset_id: string | null;
+  engines: EngineType[];
+  total_workloads: number;
+  completed_workloads: number;
+  progress_pct: number;
+  current_step: string;
+  results: any[];
+  scorecard: TortureScorecard | null;
+}
+
+export async function fetchTortureStatus(): Promise<TortureStatusResponse> {
+  const res = await fetch(`${BASE_URL}/api/benchmarks/torture/status`);
+  if (!res.ok) throw new Error('Failed to fetch torture status');
+  return res.json();
+}
+
+export async function startTortureBackground(datasetId: string, engines: EngineType[]): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/benchmarks/torture/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataset_id: datasetId, engines }),
+  });
+  if (!res.ok) throw new Error('Failed to start torture suite');
+}
+
 export async function runTortureSuite(datasetId: string, engines: EngineType[]): Promise<TortureScorecard> {
   const res = await fetch(`${BASE_URL}/api/benchmarks/torture`, {
     method: 'POST',

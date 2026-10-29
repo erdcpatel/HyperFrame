@@ -1,6 +1,10 @@
+import asyncio
+import json
+import threading
 import time
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
 
@@ -17,15 +21,67 @@ class TortureRequest(BaseModel):
     dataset_id: str
     engines: list[Literal["duckdb", "polars", "perspective"]] = ["duckdb", "polars"]
 
-@router.post("/torture", response_model=TortureScorecard)
-def run_torture_suite(req: TortureRequest):
-    file_path = catalog.get_dataset_path(req.dataset_id)
-    if not file_path:
-        raise HTTPException(status_code=404, detail=f"Dataset '{req.dataset_id}' not found.")
+class TortureStateManager:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.is_running = False
+        self.dataset_id: Optional[str] = None
+        self.engines: list[str] = []
+        self.total_workloads = 0
+        self.completed_workloads = 0
+        self.current_step = ""
+        self.partial_results: list[TortureWorkloadResult] = []
+        self.latest_scorecard: Optional[TortureScorecard] = None
+        self._listeners: list[asyncio.Queue] = []
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-    weather = catalog.get_weather(req.dataset_id, compute_deep_profiles=False)
-    col_names = [c.name for c in weather.columns]
+    def get_status(self) -> dict:
+        with self._lock:
+            pct = int((self.completed_workloads / max(1, self.total_workloads)) * 100) if self.is_running else (100 if self.latest_scorecard else 0)
+            return {
+                "is_running": self.is_running,
+                "dataset_id": self.dataset_id,
+                "engines": self.engines,
+                "total_workloads": self.total_workloads,
+                "completed_workloads": self.completed_workloads,
+                "progress_pct": min(100, pct),
+                "current_step": self.current_step,
+                "results": [r.model_dump() for r in self.partial_results],
+                "scorecard": self.latest_scorecard.model_dump() if self.latest_scorecard else None
+            }
 
+    def register_listener(self) -> asyncio.Queue:
+        q = asyncio.Queue()
+        with self._lock:
+            self._listeners.append(q)
+        return q
+
+    def remove_listener(self, q: asyncio.Queue):
+        with self._lock:
+            if q in self._listeners:
+                self._listeners.remove(q)
+
+    def broadcast(self, event_type: str, data: dict):
+        with self._lock:
+            listeners = list(self._listeners)
+            loop = self._loop
+        
+        msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+        for q in listeners:
+            if loop and loop.is_running():
+                try:
+                    loop.call_soon_threadsafe(q.put_nowait, msg)
+                except Exception:
+                    pass
+            else:
+                try:
+                    q.put_nowait(msg)
+                except Exception:
+                    pass
+
+torture_manager = TortureStateManager()
+
+def _build_workload_specs(dataset_id: str, weather):
     # Dynamically pick columns based on dataset schema
     str_cols = [c for c in weather.columns if any(t in c.dtype.lower() for t in ["str", "varchar", "utf8", "text", "char"])]
     if str_cols:
@@ -51,15 +107,13 @@ def run_torture_suite(req: TortureRequest):
     sorted_by_card = sorted(weather.columns, key=lambda c: getattr(c, "approx_unique", 0), reverse=True)
     high_card_col = sorted_by_card[0].name if sorted_by_card else id_col
 
-    results: list[TortureWorkloadResult] = []
-
-    workload_specs = [
+    return [
         {
             "id": "workload_1_needle",
             "name": "1. Needle in Haystack",
             "description": f"Filtered scan on {sym_col} with projection",
             "query": HyperQuery(
-                dataset=req.dataset_id,
+                dataset=dataset_id,
                 select=[id_col, sym_col, num_col],
                 filters=[HyperFilter(column=sym_col, operator="contains", value=needle_val)],
                 limit=100
@@ -70,7 +124,7 @@ def run_torture_suite(req: TortureRequest):
             "name": "2. Multi-Column Sort",
             "description": f"Global sort on {num_col} DESC",
             "query": HyperQuery(
-                dataset=req.dataset_id,
+                dataset=dataset_id,
                 select=[id_col, sym_col, num_col],
                 orderBy=[HyperSort(column=num_col, direction="desc")],
                 limit=200
@@ -81,7 +135,7 @@ def run_torture_suite(req: TortureRequest):
             "name": "3. Low-Card Pivot",
             "description": f"Group by {sym_col} with {agg_func.upper()}({num_col}) and COUNT({id_col})",
             "query": HyperQuery(
-                dataset=req.dataset_id,
+                dataset=dataset_id,
                 groupBy=[sym_col],
                 aggregations=[
                     HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
@@ -96,7 +150,7 @@ def run_torture_suite(req: TortureRequest):
             "name": "4. High-Card Explosion",
             "description": f"Group by {high_card_col} (stress hash tables & spill memory)",
             "query": HyperQuery(
-                dataset=req.dataset_id,
+                dataset=dataset_id,
                 groupBy=[high_card_col],
                 aggregations=[
                     HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
@@ -110,7 +164,7 @@ def run_torture_suite(req: TortureRequest):
             "name": "5. Scroll Thrash (5 Pages)",
             "description": "Sequential paginated fetches (offset 0 -> 400)",
             "query": HyperQuery(
-                dataset=req.dataset_id,
+                dataset=dataset_id,
                 select=[id_col, sym_col, num_col],
                 limit=100,
                 offset=400
@@ -118,10 +172,45 @@ def run_torture_suite(req: TortureRequest):
         }
     ]
 
+def _run_suite_job(req: TortureRequest):
+    file_path = catalog.get_dataset_path(req.dataset_id)
+    if not file_path:
+        with torture_manager._lock:
+            torture_manager.is_running = False
+            torture_manager.current_step = f"Error: Dataset '{req.dataset_id}' not found."
+        torture_manager.broadcast("error", {"detail": f"Dataset '{req.dataset_id}' not found."})
+        return
+
+    weather = catalog.get_weather(req.dataset_id, compute_deep_profiles=False)
+    workload_specs = _build_workload_specs(req.dataset_id, weather)
+    total_steps = len(req.engines) * len(workload_specs)
+
+    with torture_manager._lock:
+        torture_manager.is_running = True
+        torture_manager.dataset_id = req.dataset_id
+        torture_manager.engines = list(req.engines)
+        torture_manager.total_workloads = total_steps
+        torture_manager.completed_workloads = 0
+        torture_manager.partial_results = []
+        torture_manager.latest_scorecard = None
+
+    results: list[TortureWorkloadResult] = []
+
     for eng_name in req.engines:
         engine = lifecycle_manager.get_engine(eng_name)
 
         for w in workload_specs:
+            step_name = f"Testing {eng_name.upper()}: {w['name']}"
+            with torture_manager._lock:
+                torture_manager.current_step = step_name
+
+            torture_manager.broadcast("progress", {
+                "current_step": step_name,
+                "completed": len(results),
+                "total": total_steps,
+                "progress_pct": int((len(results) / max(1, total_steps)) * 100)
+            })
+
             q: HyperQuery = w["query"].model_copy()
             q.engine = eng_name
 
@@ -153,7 +242,7 @@ def run_torture_suite(req: TortureRequest):
 
             waterfall = profiler.build_waterfall()
 
-            results.append(TortureWorkloadResult(
+            r = TortureWorkloadResult(
                 workload_id=w["id"],
                 workload_name=w["name"],
                 description=w["description"],
@@ -169,9 +258,22 @@ def run_torture_suite(req: TortureRequest):
                 status=status,
                 error_message=err_msg,
                 plan_summary=plan_summary
-            ))
+            )
+            results.append(r)
 
-    # Determine overall winner
+            with torture_manager._lock:
+                torture_manager.partial_results.append(r)
+                torture_manager.completed_workloads = len(results)
+
+            torture_manager.broadcast("workload_done", {
+                "result": r.model_dump(),
+                "completed": len(results),
+                "total": total_steps,
+                "progress_pct": int((len(results) / max(1, total_steps)) * 100),
+                "current_step": step_name
+            })
+
+    # Scorecard calculation
     engine_scores: dict[str, float] = {}
     for r in results:
         if r.status == "SUCCESS":
@@ -181,10 +283,98 @@ def run_torture_suite(req: TortureRequest):
 
     winner = min(engine_scores, key=engine_scores.get) if engine_scores else None
 
-    return TortureScorecard(
+    scorecard = TortureScorecard(
         dataset_id=req.dataset_id,
         timestamp=datetime.now().isoformat(),
         results=results,
         winner_engine=winner,
         summary=f"Torture benchmark completed across {len(req.engines)} engines with {len(workload_specs)} standard workloads."
     )
+
+    with torture_manager._lock:
+        torture_manager.is_running = False
+        torture_manager.latest_scorecard = scorecard
+        torture_manager.current_step = "Completed"
+
+    torture_manager.broadcast("complete", {
+        "scorecard": scorecard.model_dump()
+    })
+
+@router.get("/torture/status")
+def get_torture_status():
+    """
+    Returns the real-time background execution status or latest cached scorecard.
+    Allows closing the modal and retrieving results anytime without re-running.
+    """
+    return torture_manager.get_status()
+
+@router.post("/torture/start")
+def start_torture_background(req: TortureRequest):
+    """
+    Kicks off the Torture Benchmark Suite in an independent background worker thread.
+    Returns immediately so the user can freely navigate or close the modal.
+    """
+    with torture_manager._lock:
+        if torture_manager.is_running:
+            return {"status": "already_running", "message": "A torture benchmark run is currently in progress."}
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    torture_manager._loop = loop
+
+    thread = threading.Thread(target=_run_suite_job, args=(req,), daemon=True)
+    thread.start()
+
+    return {
+        "status": "started",
+        "dataset_id": req.dataset_id,
+        "engines": req.engines
+    }
+
+@router.get("/torture/stream")
+async def stream_torture_progress(request: Request):
+    """
+    Server-Sent Events (SSE) stream providing real-time progress, live step updates,
+    and row-by-row scorecard updates as each workload finishes.
+    """
+    q = torture_manager.register_listener()
+
+    async def event_generator():
+        try:
+            # Yield initial snapshot
+            status = torture_manager.get_status()
+            yield f"event: init\ndata: {json.dumps(status)}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=1.0)
+                    yield msg
+                except asyncio.TimeoutError:
+                    # Keep-alive heartbeat
+                    yield ": keepalive\n\n"
+        finally:
+            torture_manager.remove_listener(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+@router.post("/torture", response_model=TortureScorecard)
+def run_torture_suite(req: TortureRequest):
+    """
+    Synchronous fallback endpoint that runs the suite and returns the scorecard.
+    """
+    _run_suite_job(req)
+    if torture_manager.latest_scorecard:
+        return torture_manager.latest_scorecard
+    raise HTTPException(status_code=500, detail="Torture suite run failed.")
