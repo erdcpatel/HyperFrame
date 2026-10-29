@@ -60,12 +60,40 @@ class DatasetCatalog:
 
     def register_file(self, dataset_id: str, file_path: str, description: Optional[str] = None) -> DatasetWeather:
         """
-        Zero-RAM Registration: Reads only Parquet metadata to extract schema,
-        row count, and row groups. Does NOT load data into memory.
+        Registers a dataset from Parquet, CSV, TSV, or Excel (.xlsx, .xls).
+        If the file is CSV/Excel, automatically stream-converts to high-performance
+        ZSTD-compressed Parquet handling tricky quotes, delimiters, and multi-line strings.
         """
         posix_p = to_posix_path(file_path)
         if not os.path.exists(posix_p):
             raise FileNotFoundError(f"File not found: {posix_p}")
+
+        suffix = Path(posix_p).suffix.lower()
+
+        # Handle CSV / TSV conversion via DuckDB read_csv_auto
+        if suffix in [".csv", ".tsv"]:
+            target_pqt = self.data_dir / f"{dataset_id}.parquet"
+            posix_target = to_posix_path(target_pqt)
+            con = duckdb.connect()
+            try:
+                con.execute(f"""
+                    COPY (SELECT * FROM read_csv_auto('{posix_p}'))
+                    TO '{posix_target}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000);
+                """)
+            finally:
+                con.close()
+            posix_p = posix_target
+
+        # Handle Excel (.xlsx, .xls) conversion via pandas + openpyxl/xlrd
+        elif suffix in [".xlsx", ".xls"]:
+            import pandas as pd
+            target_pqt = self.data_dir / f"{dataset_id}.parquet"
+            posix_target = to_posix_path(target_pqt)
+            df = pd.read_excel(posix_p)
+            tbl = pa.Table.from_pandas(df)
+            pq.write_table(tbl, posix_target, compression="zstd")
+            del df, tbl
+            posix_p = posix_target
 
         # Extract file-level metadata via PyArrow Parquet File Meta
         parquet_file = pq.ParquetFile(posix_p)
@@ -210,17 +238,17 @@ class DatasetCatalog:
 
     def scan_data_directory(self) -> list[DatasetWeather]:
         """
-        Scans settings.DATA_DIR for any .parquet / .pqt files dropped directly into the folder
-        and registers them automatically with Zero-RAM overhead.
+        Scans settings.DATA_DIR for any .parquet, .csv, .tsv, .xlsx, .xls files
+        dropped directly into the folder and registers them automatically.
         """
         registered = []
-        for file_path in self.data_dir.glob("*.p*"):
-            if file_path.suffix.lower() in [".parquet", ".pqt"]:
+        valid_exts = {".parquet", ".pqt", ".csv", ".tsv", ".xlsx", ".xls"}
+        for file_path in self.data_dir.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in valid_exts:
                 ds_id = file_path.stem
-                # Check if already registered
                 cat = self._read_catalog()
                 if ds_id not in cat:
-                    weather = self.register_file(ds_id, str(file_path), description="Auto-scanned file")
+                    weather = self.register_file(ds_id, str(file_path), description=f"Auto-scanned {file_path.suffix} file")
                     registered.append(weather)
         return registered
 
@@ -236,10 +264,9 @@ class DatasetCatalog:
                 self.delete_dataset(ds_id)
                 removed_ids.append(ds_id)
 
-        # Also remove any dangling test parquet files in data_dir
-        for file_path in self.data_dir.glob("*.parquet"):
-            fn = file_path.name.lower()
-            if "test" in fn or "synthetic" in fn:
+        # Also remove any dangling test files (.parquet, .csv, .xlsx) in data_dir
+        for file_path in self.data_dir.iterdir():
+            if file_path.is_file() and any(k in file_path.name.lower() for k in ["test", "synthetic"]):
                 try:
                     file_path.unlink(missing_ok=True)
                     if file_path.stem not in removed_ids:

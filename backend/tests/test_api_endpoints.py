@@ -100,3 +100,60 @@ def test_type_coerced_filter(api_sample):
         data = res.json()
         assert data["total_matching_rows"] > 0
 
+def test_csv_upload_with_quotes_and_commas(tmp_path):
+    csv_content = '''trade_id,trader,notes,volume
+20001,"O'Connor, John","Complex, with comma and ""escaped"" quotes",150000.5
+20002,"Smith, Jane","Multi-line\r\ncommentary text",350000.0
+'''
+    csv_file = tmp_path / "tricky_quotes.csv"
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    with open(csv_file, "rb") as f:
+        res = client.post(
+            "/api/datasets/upload",
+            data={"dataset_id": "test_tricky_csv"},
+            files={"file": ("tricky_quotes.csv", f, "text/csv")}
+        )
+    assert res.status_code == 200
+    weather = res.json()
+    assert weather["row_count"] == 2
+    assert "trader" in [c["name"] for c in weather["columns"]]
+
+    # Query the converted CSV dataset
+    q_res = client.post("/api/query/run", json={"dataset": "test_tricky_csv", "engine": "duckdb"})
+    assert q_res.status_code == 200
+    rows = q_res.json()["data"]
+    assert len(rows) == 2
+    assert "O'Connor, John" in rows[0]["trader"]
+    assert "Multi-line" in rows[1]["notes"]
+
+    catalog.delete_dataset("test_tricky_csv")
+
+def test_excel_upload(tmp_path):
+    import pandas as pd
+    df = pd.DataFrame({
+        "account_name": ["Global Flow", "APAC Macro", "Credit Alpha"],
+        "notional_usd": [1250000.0, 4500000.0, 980000.0],
+        "active": [True, True, False]
+    })
+    xlsx_file = tmp_path / "accounts.xlsx"
+    df.to_excel(xlsx_file, index=False)
+
+    with open(xlsx_file, "rb") as f:
+        res = client.post(
+            "/api/datasets/upload",
+            data={"dataset_id": "test_excel_ds"},
+            files={"file": ("accounts.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        )
+    assert res.status_code == 200
+    weather = res.json()
+    assert weather["row_count"] == 3
+    assert "account_name" in [c["name"] for c in weather["columns"]]
+
+    # Query the converted Excel dataset
+    q_res = client.post("/api/query/run", json={"dataset": "test_excel_ds", "engine": "duckdb"})
+    assert q_res.status_code == 200
+    assert len(q_res.json()["data"]) == 3
+
+    catalog.delete_dataset("test_excel_ds")
+

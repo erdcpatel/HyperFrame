@@ -28,14 +28,19 @@ async def upload_dataset(
     dataset_id: str = Form(...),
     file: UploadFile = File(...)
 ):
-    if not file.filename.endswith(".parquet") and not file.filename.endswith(".pqt"):
-        raise HTTPException(status_code=400, detail="Only Parquet files (.parquet, .pqt) are supported.")
+    suffix = Path(file.filename or "").suffix.lower()
+    allowed_exts = {".parquet", ".pqt", ".csv", ".tsv", ".xlsx", ".xls"}
+    if suffix not in allowed_exts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{suffix}'. Supported: Parquet (.parquet), CSV (.csv), TSV (.tsv), Excel (.xlsx, .xls)"
+        )
 
-    dest_path = settings.DATA_DIR / f"{dataset_id}.parquet"
+    dest_path = settings.DATA_DIR / f"{dataset_id}{suffix}"
     with open(dest_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return catalog.register_file(dataset_id, str(dest_path), description=f"Uploaded file: {file.filename}")
+    return catalog.register_file(dataset_id, str(dest_path), description=f"Uploaded {suffix} file: {file.filename}")
 
 @router.post("/sample", response_model=DatasetWeather)
 def generate_sample(

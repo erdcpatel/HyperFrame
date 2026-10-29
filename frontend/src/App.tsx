@@ -269,7 +269,7 @@ export const App: React.FC = () => {
               </div>
               <h2 className="text-lg font-bold text-slate-200 mb-1">No Active Dataset Selected</h2>
               <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
-                Drop your real <code className="text-blue-300 font-mono">.parquet</code> files into <code className="text-blue-300 font-mono">backend/data/</code>, or upload one directly, or generate a 500,000-row sample to explore.
+                Drop your <code className="text-blue-300 font-mono">.parquet</code>, <code className="text-blue-300 font-mono">.csv</code>, or <code className="text-blue-300 font-mono">.xlsx</code> files into <code className="text-blue-300 font-mono">backend/data/</code>, or upload one directly to explore.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -277,7 +277,7 @@ export const App: React.FC = () => {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-900/30 transition-all"
                 >
                   <Upload className="w-4 h-4" />
-                  <span>Upload Parquet File</span>
+                  <span>Upload Parquet / CSV / Excel</span>
                 </button>
                 <button
                   onClick={handleGenerateSample}

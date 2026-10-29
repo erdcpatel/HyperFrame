@@ -89,7 +89,7 @@ export const Sidebar: React.FC<Props> = ({
             <button
               onClick={() => fileInputRef.current?.click()}
               className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-emerald-400 transition-colors"
-              title="Upload Parquet File from your computer"
+              title="Upload Parquet, CSV, or Excel (.xlsx, .xls) file"
             >
               <Upload className="w-3 h-3" />
             </button>
@@ -97,7 +97,7 @@ export const Sidebar: React.FC<Props> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept=".parquet,.pqt"
+              accept=".parquet,.pqt,.csv,.tsv,.xlsx,.xls"
               className="hidden"
             />
           </div>

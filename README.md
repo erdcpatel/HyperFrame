@@ -40,13 +40,18 @@ Engineered natively for **Windows 10/11**, **macOS**, and **Linux** on **Python 
 
 ## 📂 Working with Real Data
 
+HyperFrame supports **Parquet (`.parquet`, `.pqt`)**, **CSV (`.csv`, `.tsv`)**, and **Excel (`.xlsx`, `.xls`)**.
+
 ### 1. Where to Drop Your Data Files
-* **Drop into Data Directory:** Copy any `.parquet` or `.pqt` file directly into:
+* **Drop into Data Directory:** Copy any `.parquet`, `.csv`, or `.xlsx` file directly into:
   ```text
   backend/data/
   ```
   Then click the **Scan Folder (🔄)** button in the sidebar or run `POST /api/datasets/scan` to auto-register it.
-* **Upload from UI:** Click the **Upload (⬆️)** icon in the sidebar to pick a file from your computer.
+* **Upload from UI:** Click the **Upload (⬆️)** icon in the sidebar to pick any Parquet, CSV, or Excel file from your computer.
+* **Automatic CSV & Excel Optimization:**
+  * **Tricky Quotes & Delimiters:** Handled automatically via DuckDB's native multi-byte CSV sniffer (supports embedded commas `"San Francisco, CA"`, escaped double quotes `""`, and multi-line text fields `\r\n`).
+  * **Auto-Conversion:** CSVs and Excel workbooks are automatically converted into columnar, ZSTD-compressed Parquet in `backend/data/`, giving you instant column projection and out-of-core streaming speed!
 * **Zero-Copy External Link:** Link large files (5GB–50GB) without moving or copying them:
   ```bash
   curl -X POST http://localhost:8000/api/datasets/register \
