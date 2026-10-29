@@ -6,7 +6,9 @@ import {
   Flame,
   Cpu,
   Database,
-  Activity
+  Activity,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { EngineType } from '../../types';
 
@@ -19,6 +21,8 @@ interface Props {
   onPurgeMemory: () => void;
   onOpenTortureModal: () => void;
   totalMatchingRows?: number;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -29,12 +33,27 @@ export const Header: React.FC<Props> = ({
   serverRssMb,
   onPurgeMemory,
   onOpenTortureModal,
-  totalMatchingRows
+  totalMatchingRows,
+  sidebarOpen,
+  onToggleSidebar
 }) => {
   return (
     <header className="h-14 border-b border-[#1f2b45] bg-[#0c101a] px-4 flex items-center justify-between select-none">
       {/* Brand & Title */}
       <div className="flex items-center gap-3">
+        {/* Toggle Sidebar Button */}
+        <button
+          onClick={onToggleSidebar}
+          className={`p-1.5 rounded-lg border transition-all ${
+            sidebarOpen
+              ? 'border-[#24324f] bg-[#131b2e] text-slate-400 hover:text-slate-200 hover:bg-[#1a233a]'
+              : 'border-blue-500/40 bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 shadow-sm shadow-blue-500/20'
+          }`}
+          title={sidebarOpen ? 'Hide Sidebar (Full Screen Grid - Ctrl+B)' : 'Show Sidebar (Ctrl+B)'}
+        >
+          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+        </button>
+
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
           <Layers className="w-5 h-5 text-white" />
         </div>

@@ -13,7 +13,8 @@ import {
   Cpu,
   Upload,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  PanelLeftClose
 } from 'lucide-react';
 import { DatasetSummary, DatasetWeather, ColumnWeather } from '../../types';
 
@@ -28,6 +29,7 @@ interface Props {
   onScanFolder: () => void;
   onCleanTestData: () => void;
   onUploadFile: (file: File) => void;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -41,6 +43,7 @@ export const Sidebar: React.FC<Props> = ({
   onScanFolder,
   onCleanTestData,
   onUploadFile,
+  onToggleCollapse,
 }) => {
   const [colSearch, setColSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +103,15 @@ export const Sidebar: React.FC<Props> = ({
               accept=".parquet,.pqt,.csv,.tsv,.xlsx,.xls"
               className="hidden"
             />
+            {onToggleCollapse && (
+              <button
+                onClick={onToggleCollapse}
+                className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-slate-200 transition-colors ml-1"
+                title="Hide sidebar (Full Screen Grid - Ctrl+B)"
+              >
+                <PanelLeftClose className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
 

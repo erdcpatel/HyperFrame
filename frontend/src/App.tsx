@@ -48,6 +48,19 @@ export const App: React.FC = () => {
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
   const [xrayOpen, setXrayOpen] = useState<boolean>(false);
   const [tortureOpen, setTortureOpen] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar full screen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Initial load: datasets & engines
   const loadInitialData = async () => {
@@ -231,23 +244,34 @@ export const App: React.FC = () => {
         onPurgeMemory={handlePurgeMemory}
         onOpenTortureModal={() => setTortureOpen(true)}
         totalMatchingRows={totalMatchingRows}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
       />
 
       {/* Main Workspace Splitter */}
-      <div className="flex-1 flex min-h-0 min-w-0">
+      <div className="flex-1 flex min-h-0 min-w-0 relative">
         {/* Left Data Weather Sidebar */}
-        <Sidebar
-          datasets={datasets}
-          activeDatasetId={activeDatasetId}
-          onSelectDataset={setActiveDatasetId}
-          weather={weather}
-          loadingWeather={loadingWeather}
-          onGenerateSample={handleGenerateSample}
-          generatingSample={generatingSample}
-          onScanFolder={handleScanFolder}
-          onCleanTestData={handleCleanTestData}
-          onUploadFile={handleUploadFile}
-        />
+        <div
+          className={`h-full transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0 ${
+            sidebarOpen ? 'w-80 border-r border-[#1f2b45]' : 'w-0 border-none'
+          }`}
+        >
+          <div className="w-80 h-full">
+            <Sidebar
+              datasets={datasets}
+              activeDatasetId={activeDatasetId}
+              onSelectDataset={setActiveDatasetId}
+              weather={weather}
+              loadingWeather={loadingWeather}
+              onGenerateSample={handleGenerateSample}
+              generatingSample={generatingSample}
+              onScanFolder={handleScanFolder}
+              onCleanTestData={handleCleanTestData}
+              onUploadFile={handleUploadFile}
+              onToggleCollapse={() => setSidebarOpen(false)}
+            />
+          </div>
+        </div>
 
         {/* Center Analytical Stage */}
         <main className="flex-1 flex flex-col min-h-0 min-w-0">
