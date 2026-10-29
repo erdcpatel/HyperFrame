@@ -37,28 +37,35 @@ export const PerspectiveCanvas: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
 
   const executePivot = async () => {
-    if (!datasetId || !groupByCol) return;
+    if (!datasetId) return;
     setLoading(true);
     try {
-      const q: HyperQuery = {
-        dataset: datasetId,
-        engine,
-        groupBy: [groupByCol],
-        aggregations: [
-          {
-            column: aggFunc === 'count' ? columns[0]?.name || 'trade_id' : metricCol,
-            function: aggFunc,
-            alias: 'metric_value',
-          },
-          {
-            column: columns[0]?.name || 'trade_id',
-            function: 'count',
-            alias: 'row_count',
-          },
-        ],
-        orderBy: [{ column: 'metric_value', direction: 'desc' }],
-        limit: 100,
-      };
+      const q: HyperQuery = groupByCol
+        ? {
+            dataset: datasetId,
+            engine,
+            groupBy: [groupByCol],
+            aggregations: [
+              {
+                column: aggFunc === 'count' ? columns[0]?.name || 'trade_id' : metricCol,
+                function: aggFunc,
+                alias: 'metric_value',
+              },
+              {
+                column: columns[0]?.name || 'trade_id',
+                function: 'count',
+                alias: 'row_count',
+              },
+            ],
+            orderBy: [{ column: 'metric_value', direction: 'desc' }],
+            limit: 100,
+          }
+        : {
+            dataset: datasetId,
+            engine,
+            limit: 100,
+            orderBy: metricCol ? [{ column: metricCol, direction: 'desc' }] : undefined,
+          };
 
       const tStart = performance.now();
       const res = await runQuery(q);
@@ -97,6 +104,7 @@ export const PerspectiveCanvas: React.FC<Props> = ({
               onChange={(e) => setGroupByCol(e.target.value)}
               className="bg-[#141b2c] border border-[#24324f] rounded px-2 py-1 text-slate-200 outline-none cursor-pointer"
             >
+              <option value="">(None - Full Raw Grid View)</option>
               {columns.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name} ({c.dtype.split('(')[0]})
@@ -105,28 +113,32 @@ export const PerspectiveCanvas: React.FC<Props> = ({
             </select>
           </div>
 
-          <span className="text-slate-600">→</span>
+          {groupByCol && (
+            <>
+              <span className="text-slate-600">→</span>
 
-          {/* Aggregation Function */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-semibold">Aggregation:</span>
-            <select
-              value={aggFunc}
-              onChange={(e) => setAggFunc(e.target.value as any)}
-              className="bg-[#141b2c] border border-[#24324f] rounded px-2 py-1 text-slate-200 outline-none cursor-pointer"
-            >
-              <option value="sum">SUM</option>
-              <option value="avg">AVERAGE</option>
-              <option value="count">COUNT</option>
-              <option value="min">MIN</option>
-              <option value="max">MAX</option>
-            </select>
-          </div>
+              {/* Aggregation Function */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-semibold">Aggregation:</span>
+                <select
+                  value={aggFunc}
+                  onChange={(e) => setAggFunc(e.target.value as any)}
+                  className="bg-[#141b2c] border border-[#24324f] rounded px-2 py-1 text-slate-200 outline-none cursor-pointer"
+                >
+                  <option value="sum">SUM</option>
+                  <option value="avg">AVERAGE</option>
+                  <option value="count">COUNT</option>
+                  <option value="min">MIN</option>
+                  <option value="max">MAX</option>
+                </select>
+              </div>
+            </>
+          )}
 
-          {/* Metric Column */}
-          {aggFunc !== 'count' && (
+          {/* Metric / Sort Column */}
+          {(aggFunc !== 'count' || !groupByCol) && (
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-semibold">Measure:</span>
+              <span className="text-slate-400 font-semibold">{groupByCol ? 'Measure:' : 'Sort Column:'}</span>
               <select
                 value={metricCol}
                 onChange={(e) => setMetricCol(e.target.value)}
@@ -172,55 +184,83 @@ export const PerspectiveCanvas: React.FC<Props> = ({
       {/* Main Pivot Stage */}
       <div className="flex-1 p-4 overflow-y-auto">
         {chartType === 'table' ? (
-          <div className="bg-[#101728] rounded-xl border border-[#1f2b45] overflow-hidden shadow-xl">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#151f36] border-b border-[#24324f] text-slate-300">
-                <tr>
-                  <th className="py-2.5 px-4 font-bold">{groupByCol.toUpperCase()}</th>
-                  <th className="py-2.5 px-4 font-bold text-right">{aggFunc.toUpperCase()} OF {metricCol.toUpperCase()}</th>
-                  <th className="py-2.5 px-4 font-bold text-right">TOTAL ROWS</th>
-                  <th className="py-2.5 px-4 font-bold">DISTRIBUTION</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1b2640]">
-                {data.map((row, idx) => {
-                  const val = Number(row.metric_value) || 0;
-                  const pct = Math.min(100, Math.round((val / maxVal) * 100));
-                  return (
+          <div className="bg-[#101728] rounded-xl border border-[#1f2b45] overflow-x-auto shadow-xl">
+            {groupByCol ? (
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-[#151f36] border-b border-[#24324f] text-slate-300">
+                  <tr>
+                    <th className="py-2.5 px-4 font-bold">{groupByCol.toUpperCase()}</th>
+                    <th className="py-2.5 px-4 font-bold text-right">{aggFunc.toUpperCase()} OF {metricCol.toUpperCase()}</th>
+                    <th className="py-2.5 px-4 font-bold text-right">TOTAL ROWS</th>
+                    <th className="py-2.5 px-4 font-bold">DISTRIBUTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1b2640]">
+                  {data.map((row, idx) => {
+                    const val = Number(row.metric_value) || 0;
+                    const pct = Math.min(100, Math.round((val / maxVal) * 100));
+                    return (
+                      <tr key={idx} className="hover:bg-[#151e33] transition-colors">
+                        <td className="py-2 px-4 font-semibold text-slate-200 flex items-center gap-1.5">
+                          <ChevronRight className="w-3 h-3 text-blue-400" />
+                          <span>{String(row[groupByCol] ?? 'NULL')}</span>
+                        </td>
+                        <td className="py-2 px-4 text-right text-blue-400 font-bold">
+                          {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-2 px-4 text-right text-slate-400">
+                          {Number(row.row_count).toLocaleString()}
+                        </td>
+                        <td className="py-2 px-4 w-64">
+                          <div className="w-full bg-[#1e2a47] rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-[#151f36] border-b border-[#24324f] text-slate-300">
+                  <tr>
+                    <th className="py-2.5 px-3 font-bold text-slate-500 w-12">#</th>
+                    {columns.map((c) => (
+                      <th key={c.name} className="py-2.5 px-4 font-bold text-slate-200">
+                        {c.name.toUpperCase()}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1b2640]">
+                  {data.map((row, idx) => (
                     <tr key={idx} className="hover:bg-[#151e33] transition-colors">
-                      <td className="py-2 px-4 font-semibold text-slate-200 flex items-center gap-1.5">
-                        <ChevronRight className="w-3 h-3 text-blue-400" />
-                        <span>{String(row[groupByCol] ?? 'NULL')}</span>
-                      </td>
-                      <td className="py-2 px-4 text-right text-blue-400 font-bold">
-                        {val.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-2 px-4 text-right text-slate-400">
-                        {Number(row.row_count).toLocaleString()}
-                      </td>
-                      <td className="py-2 px-4 w-64">
-                        <div className="w-full bg-[#1e2a47] rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </td>
+                      <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
+                      {columns.map((c) => (
+                        <td key={c.name} className="py-2 px-4 text-slate-300 whitespace-nowrap">
+                          {String(row[c.name] ?? 'NULL')}
+                        </td>
+                      ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         ) : (
           <div className="space-y-3 max-w-4xl mx-auto pt-4">
             {data.map((row, idx) => {
-              const val = Number(row.metric_value) || 0;
+              const label = groupByCol ? String(row[groupByCol] ?? 'NULL') : String(row[columns[0]?.name] ?? `#${idx + 1}`);
+              const val = groupByCol ? (Number(row.metric_value) || 0) : (Number(row[metricCol]) || 0);
               const pct = Math.min(100, Math.round((val / maxVal) * 100));
               return (
                 <div key={idx} className="space-y-1">
                   <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="font-semibold text-slate-200">{String(row[groupByCol] ?? 'NULL')}</span>
+                    <span className="font-semibold text-slate-200">{label}</span>
                     <span className="font-bold text-blue-400">{val.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="w-full bg-[#151e33] rounded-md h-6 overflow-hidden flex items-center p-1 border border-[#202c47]">
