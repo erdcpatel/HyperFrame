@@ -1,0 +1,15 @@
+# HyperFrame Core Backend Requirements (Python 3.13 Compatible)
+duckdb>=2.0.0
+polars>=1.26.0
+pyarrow>=18.1.0
+perspective-python>=5.5.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+psutil>=6.1.0
+pydantic>=2.9.0
+pydantic-settings>=2.7.0
+orjson>=3.10.0
+pytest>=8.3.0
+httpx>=0.28.0
+python-multipart>=0.0.20
+websockets>=14.0

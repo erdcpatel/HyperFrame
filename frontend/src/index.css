@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom AG Grid Dark Overrides */
+.ag-theme-alpine-dark {
+  --ag-background-color: #0c101a;
+  --ag-header-background-color: #121827;
+  --ag-odd-row-background-color: #0f1422;
+  --ag-row-hover-color: #162035;
+  --ag-selected-row-background-color: #1b2845;
+  --ag-border-color: #1e2a44;
+  --ag-header-foreground-color: #94a3b8;
+  --ag-foreground-color: #cbd5e1;
+  --ag-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --ag-font-size: 12px;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f2b45;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2e3e63;
+}
