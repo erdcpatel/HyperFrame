@@ -3,9 +3,8 @@
   "version": "1.0.0",
   "description": "HyperFrame: Ad-Hoc Analytics & Benchmarking Studio",
   "scripts": {
-    "postinstall": "npm --prefix frontend install",
-    "build": "npm --prefix frontend run build",
-    "dev": "npm --prefix frontend run dev",
+    "build": "cd frontend && npx --yes vite build",
+    "dev": "cd frontend && npx --yes vite",
     "start": "python run.py",
     "clean": "python clean.py"
   }
