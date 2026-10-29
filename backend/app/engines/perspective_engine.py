@@ -32,9 +32,12 @@ class PerspectiveEngine(BaseEngine):
             return
 
         posix_p = to_posix_path(file_path)
-        arrow_table = pq.read_table(posix_p)
-        table = self._client.table(arrow_table, name=dataset_id)
-        self._active_tables[dataset_id] = table
+        try:
+            arrow_table = pq.read_table(posix_p)
+            table = self._client.table(arrow_table, name=dataset_id)
+            self._active_tables[dataset_id] = table
+        except Exception as e:
+            raise RuntimeError(f"Perspective In-Memory Load Error on '{dataset_id}': {str(e)}. Dataset may be too large to fit in physical RAM for in-memory C++ hosting.")
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         """
@@ -77,16 +80,18 @@ class PerspectiveEngine(BaseEngine):
 
         view = table.view(**view_config)
         try:
-            arrow_bytes = view.to_arrow()
+            total_rows = view.num_rows()
+            # Pushdown window slicing directly into Perspective C++ serialization (avoids serializing millions of rows)
+            if query.limit > 0:
+                end_r = min(total_rows, query.offset + query.limit)
+                arrow_bytes = view.to_arrow(start_row=query.offset, end_row=end_r)
+            else:
+                arrow_bytes = view.to_arrow()
+
             reader = pa.ipc.open_stream(arrow_bytes)
             res_table = reader.read_all()
-            total_rows = view.num_rows()
-            
-            # Slice if limit / offset requested
-            if query.limit > 0 and (query.offset > 0 or query.limit < total_rows):
-                res_table = res_table.slice(query.offset, query.limit)
 
-            plan_str = f"Perspective In-Memory View (Columns: {len(res_table.column_names)}, Rows: {res_table.num_rows})"
+            plan_str = f"Perspective In-Memory View (Columns: {len(res_table.column_names)}, Returned: {res_table.num_rows}, Total: {total_rows})"
             return res_table, plan_str, total_rows
         finally:
             view.delete()
