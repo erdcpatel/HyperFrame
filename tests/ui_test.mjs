@@ -13,8 +13,9 @@ async function getWsUrl() {
       const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json`);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.length > 0 && data[0].webSocketDebuggerUrl) {
-          return data[0].webSocketDebuggerUrl;
+        const page = Array.isArray(data) ? data.find(t => t.type === 'page') : null;
+        if (page && page.webSocketDebuggerUrl) {
+          return page.webSocketDebuggerUrl;
         }
       }
     } catch (e) {}
@@ -32,7 +33,7 @@ async function run() {
     '--no-default-browser-check',
     '--disable-gpu',
     '--window-size=1400,900',
-    'about:blank'
+    'http://127.0.0.1:8000'
   ]);
 
   try {
@@ -53,7 +54,7 @@ async function run() {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.id && callbacks.has(msg.id)) {
-        callbacks.get(msg.id)(msg.result);
+        callbacks.get(msg.id)(msg.result || msg.error);
         callbacks.delete(msg.id);
       }
       if (msg.method === 'Runtime.consoleAPICalled') {
@@ -65,10 +66,17 @@ async function run() {
       }
     };
 
-    function send(method, params = {}) {
+    function send(method, params = {}, timeoutMs = 8000) {
       return new Promise((resolve) => {
         const msgId = id++;
-        callbacks.set(msgId, resolve);
+        const timer = setTimeout(() => {
+          callbacks.delete(msgId);
+          resolve({ error: 'timeout' });
+        }, timeoutMs);
+        callbacks.set(msgId, (res) => {
+          clearTimeout(timer);
+          resolve(res);
+        });
         ws.send(JSON.stringify({ id: msgId, method, params }));
       });
     }
@@ -77,8 +85,7 @@ async function run() {
     await send('Page.enable');
     await send('DOM.enable');
 
-    console.log('🌐 Navigating to http://localhost:8000 ...');
-    await send('Page.navigate', { url: 'http://localhost:8000' });
+    console.log('⏳ Waiting for React Studio to mount...');
     await sleep(2500);
 
     // 1. Initial Page Verification
@@ -158,12 +165,20 @@ async function run() {
 
     console.log('▶️ Executing SQL Query...');
     await send('Runtime.evaluate', {
-      expression: `
+      expression: `(() => {
         const runBtn = Array.from(document.querySelectorAll('button')).find(b => (b.textContent || '').includes('Run Query'));
         if (runBtn) runBtn.click();
-      `
+      })()`
     });
-    await sleep(1500);
+    // Wait for query result table to appear
+    for (let i = 0; i < 20; i++) {
+      const check = await send('Runtime.evaluate', {
+        expression: `document.querySelectorAll('table').length > 0`,
+        returnByValue: true
+      });
+      if (check?.result?.value) break;
+      await sleep(200);
+    }
     const evalSqlResult = await send('Runtime.evaluate', {
       expression: `({
         hasResultTable: !!document.querySelector('table'),

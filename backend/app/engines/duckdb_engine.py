@@ -46,6 +46,9 @@ class DuckDBEngine(BaseEngine):
             sql = query.raw_sql.replace(":dataset", f"read_parquet('{posix_p}')")
             if f"read_parquet('{posix_p}')" not in sql and query.dataset in sql:
                 sql = sql.replace(query.dataset, f"read_parquet('{posix_p}')")
+            if count_only:
+                clean_sql = sql.rstrip("; \t\n")
+                return f"SELECT COUNT(*) FROM ({clean_sql}) AS _raw_count_subq"
             return sql
 
         from_clause = f"read_parquet('{posix_p}')"
@@ -172,7 +175,7 @@ class DuckDBEngine(BaseEngine):
             try:
                 self._sync_catalog_views(count_cursor, query.dataset, file_path)
                 res_rows = count_cursor.sql(count_sql).fetchall()
-                total_rows = res_rows[0][0] if res_rows and len(res_rows[0]) > 0 else 0
+                total_rows = int(res_rows[0][0]) if res_rows and len(res_rows[0]) > 0 and res_rows[0][0] is not None else 0
             except Exception:
                 total_rows = 0
             finally:
