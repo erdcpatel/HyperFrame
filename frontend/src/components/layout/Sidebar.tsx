@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Database,
   FileSpreadsheet,
@@ -10,7 +10,10 @@ import {
   Layers,
   PieChart,
   HardDrive,
-  Cpu
+  Cpu,
+  Upload,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 import { DatasetSummary, DatasetWeather, ColumnWeather } from '../../types';
 
@@ -22,6 +25,9 @@ interface Props {
   loadingWeather: boolean;
   onGenerateSample: () => void;
   generatingSample: boolean;
+  onScanFolder: () => void;
+  onCleanTestData: () => void;
+  onUploadFile: (file: File) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -32,8 +38,18 @@ export const Sidebar: React.FC<Props> = ({
   loadingWeather,
   onGenerateSample,
   generatingSample,
+  onScanFolder,
+  onCleanTestData,
+  onUploadFile,
 }) => {
   const [colSearch, setColSearch] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      onUploadFile(e.target.files[0]);
+    }
+  };
 
   const filteredColumns = React.useMemo(() => {
     if (!weather?.columns) return [];
@@ -62,15 +78,29 @@ export const Sidebar: React.FC<Props> = ({
             <Database className="w-3.5 h-3.5 text-blue-400" />
             <span>Datasets Catalog</span>
           </div>
-          <button
-            onClick={onGenerateSample}
-            disabled={generatingSample}
-            className="flex items-center gap-1 text-[11px] font-semibold text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
-            title="Generate a 500,000 row trading dataset"
-          >
-            <PlusCircle className="w-3 h-3" />
-            <span>{generatingSample ? 'Generating...' : '+ 500k Sample'}</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onScanFolder}
+              className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-sky-400 transition-colors"
+              title="Scan backend/data/ folder for dropped .parquet files"
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-emerald-400 transition-colors"
+              title="Upload Parquet File from your computer"
+            >
+              <Upload className="w-3 h-3" />
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".parquet,.pqt"
+              className="hidden"
+            />
+          </div>
         </div>
 
         <select
@@ -85,6 +115,27 @@ export const Sidebar: React.FC<Props> = ({
           ))}
           {datasets.length === 0 && <option value="">No datasets registered</option>}
         </select>
+
+        {/* Quick Management Action Pills */}
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#1a233a] text-[10px] font-mono">
+          <button
+            onClick={onGenerateSample}
+            disabled={generatingSample}
+            className="text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
+          >
+            <PlusCircle className="w-3 h-3" />
+            <span>{generatingSample ? 'Generating...' : '+ 500k Sample'}</span>
+          </button>
+
+          <button
+            onClick={onCleanTestData}
+            className="text-slate-500 hover:text-rose-400 flex items-center gap-1 transition-colors"
+            title="Purge all synthetic test files and keep only real data"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>Clean Test Data</span>
+          </button>
+        </div>
       </div>
 
       {/* Data Weather Card */}

@@ -22,6 +22,9 @@ import {
   activateEngine,
   purgeMemory,
   explainQuery,
+  scanDataDirectory,
+  cleanTestData,
+  uploadDatasetFile,
 } from './services/api';
 
 export const App: React.FC = () => {
@@ -148,6 +151,51 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleScanFolder = async () => {
+    try {
+      const res = await scanDataDirectory();
+      const dList = await fetchDatasets();
+      setDatasets(dList);
+      if (res.datasets.length > 0) {
+        setActiveDatasetId(res.datasets[0]);
+      }
+    } catch (err) {
+      console.error('Scan failed:', err);
+    }
+  };
+
+  const handleCleanTestData = async () => {
+    if (!window.confirm('Are you sure you want to delete all synthetic/test datasets and keep only real data?')) {
+      return;
+    }
+    try {
+      await cleanTestData();
+      const dList = await fetchDatasets();
+      setDatasets(dList);
+      if (dList.length > 0) {
+        setActiveDatasetId(dList[0].dataset_id);
+      } else {
+        setActiveDatasetId(null);
+        setWeather(null);
+      }
+    } catch (err) {
+      console.error('Clean failed:', err);
+    }
+  };
+
+  const handleUploadFile = async (file: File) => {
+    const dsId = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+    try {
+      const w = await uploadDatasetFile(dsId, file);
+      const dList = await fetchDatasets();
+      setDatasets(dList);
+      setActiveDatasetId(w.dataset_id);
+      setWeather(w);
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+  };
+
   const handleWaterfallUpdate = useCallback(
     async (w: QueryWaterfall, queryStr: string, totalRows: number, retRows: number) => {
       setWaterfall(w);
@@ -198,6 +246,9 @@ export const App: React.FC = () => {
           loadingWeather={loadingWeather}
           onGenerateSample={handleGenerateSample}
           generatingSample={generatingSample}
+          onScanFolder={handleScanFolder}
+          onCleanTestData={handleCleanTestData}
+          onUploadFile={handleUploadFile}
         />
 
         {/* Center Analytical Stage */}

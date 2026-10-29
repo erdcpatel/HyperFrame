@@ -197,8 +197,57 @@ class DatasetCatalog:
     def delete_dataset(self, dataset_id: str):
         catalog = self._read_catalog()
         if dataset_id in catalog:
+            file_path = catalog[dataset_id].get("path")
             del catalog[dataset_id]
             self._write_catalog(catalog)
+            if file_path and os.path.exists(file_path):
+                # Only delete from disk if it was created inside data_dir
+                try:
+                    if Path(file_path).parent.resolve() == self.data_dir.resolve():
+                        os.remove(file_path)
+                except Exception:
+                    pass
+
+    def scan_data_directory(self) -> list[DatasetWeather]:
+        """
+        Scans settings.DATA_DIR for any .parquet / .pqt files dropped directly into the folder
+        and registers them automatically with Zero-RAM overhead.
+        """
+        registered = []
+        for file_path in self.data_dir.glob("*.p*"):
+            if file_path.suffix.lower() in [".parquet", ".pqt"]:
+                ds_id = file_path.stem
+                # Check if already registered
+                cat = self._read_catalog()
+                if ds_id not in cat:
+                    weather = self.register_file(ds_id, str(file_path), description="Auto-scanned file")
+                    registered.append(weather)
+        return registered
+
+    def clean_test_datasets(self) -> list[str]:
+        """
+        Purges all test and synthetic datasets (*test*, *synthetic*), deletes their parquet files,
+        and cleans catalog.json so only your real datasets remain.
+        """
+        catalog = self._read_catalog()
+        removed_ids = []
+        for ds_id in list(catalog.keys()):
+            if "test" in ds_id.lower() or "synthetic" in ds_id.lower():
+                self.delete_dataset(ds_id)
+                removed_ids.append(ds_id)
+
+        # Also remove any dangling test parquet files in data_dir
+        for file_path in self.data_dir.glob("*.parquet"):
+            fn = file_path.name.lower()
+            if "test" in fn or "synthetic" in fn:
+                try:
+                    file_path.unlink(missing_ok=True)
+                    if file_path.stem not in removed_ids:
+                        removed_ids.append(file_path.stem)
+                except Exception:
+                    pass
+
+        return removed_ids
 
     def generate_sample_dataset(self, dataset_id: str = "synthetic_trades_500k", num_rows: int = 500000) -> DatasetWeather:
         """

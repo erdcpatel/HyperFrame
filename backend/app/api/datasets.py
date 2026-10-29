@@ -47,6 +47,30 @@ def generate_sample(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate sample dataset: {str(e)}")
 
+@router.post("/scan")
+def scan_directory():
+    """
+    Scans the backend/data/ directory for any dropped Parquet files and auto-registers them.
+    """
+    registered = catalog.scan_data_directory()
+    return {
+        "status": "success",
+        "newly_registered_count": len(registered),
+        "datasets": [w.dataset_id for w in registered]
+    }
+
+@router.post("/clean-test-data")
+def clean_test_data():
+    """
+    Deletes all synthetic and test datasets from disk and catalog.
+    """
+    removed = catalog.clean_test_datasets()
+    return {
+        "status": "success",
+        "message": f"Cleaned {len(removed)} test datasets.",
+        "removed_datasets": removed
+    }
+
 @router.get("/{dataset_id}/weather", response_model=DatasetWeather)
 def get_dataset_weather(dataset_id: str, deep: bool = True):
     try:

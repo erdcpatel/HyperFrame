@@ -31,6 +31,33 @@ export async function generateSampleDataset(datasetId: string = 'synthetic_trade
   return res.json();
 }
 
+export async function scanDataDirectory(): Promise<{ newly_registered_count: number; datasets: string[] }> {
+  const res = await fetch(`${BASE_URL}/api/datasets/scan`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to scan data directory');
+  return res.json();
+}
+
+export async function cleanTestData(): Promise<{ message: string; removed_datasets: string[] }> {
+  const res = await fetch(`${BASE_URL}/api/datasets/clean-test-data`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to clean test data');
+  return res.json();
+}
+
+export async function uploadDatasetFile(datasetId: string, file: File): Promise<DatasetWeather> {
+  const formData = new FormData();
+  formData.append('dataset_id', datasetId);
+  formData.append('file', file);
+  const res = await fetch(`${BASE_URL}/api/datasets/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Upload failed');
+  }
+  return res.json();
+}
+
 export async function deleteDataset(datasetId: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/datasets/${datasetId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete dataset');
