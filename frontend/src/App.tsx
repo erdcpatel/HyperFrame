@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Upload, PlusCircle } from 'lucide-react';
+import { Database, Upload, PlusCircle, RefreshCw } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { Footer } from './components/layout/Footer';
@@ -26,6 +26,7 @@ import {
   scanDataDirectory,
   cleanTestData,
   uploadDatasetFile,
+  deleteDataset,
 } from './services/api';
 
 export const App: React.FC = () => {

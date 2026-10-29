@@ -16,24 +16,6 @@ interface Props {
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
 }
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import { AgGridReact } from 'ag-grid-react';
-import { ColDef, IDatasource, IGetRowsParams } from 'ag-grid-community';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-alpine.css';
-
-import { ColumnWeather, EngineType, HyperFilter, QueryWaterfall } from '../../types';
-import { queryAgGrid } from '../../services/api';
-
-interface Props {
-  datasetId: string;
-  engine: EngineType;
-  columns: ColumnWeather[];
-  filters: HyperFilter[];
-  quickSearch: string;
-  onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
-}
-
 // Stable defaultColDef defined outside component to prevent AG Grid recreation on parent re-renders
 const DEFAULT_COL_DEF: ColDef = {
   flex: 1,
