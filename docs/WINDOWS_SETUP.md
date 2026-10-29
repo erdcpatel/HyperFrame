@@ -65,4 +65,17 @@ We provide `run.py` at the root which handles Windows process creation safely:
 ```powershell
 python run.py
 ```
-This boots both the FastAPI backend (port 8000) and serves or proxies the Vite frontend.
+This boots both the FastAPI backend (port 8000) and serves the built Vite frontend.
+
+### 5. Cleaning Test Data on Windows
+To purge all synthetic and test datasets and reset the catalog:
+```powershell
+python clean.py
+```
+
+### 6. Dropping Real Parquet Files on Windows
+You can copy `.parquet` files directly into:
+```text
+backend\data\
+```
+Then click the **Scan Folder (🔄)** button in the UI sidebar to auto-register them with zero memory consumption.

@@ -133,3 +133,34 @@ HyperFrame provides 5 standardized benchmark workloads out-of-the-box:
 3. **Low-Cardinality Pivot:** Group by 5 distinct categories with 3 aggregations (`SUM`, `AVG`, `COUNT`).
 4. **High-Cardinality Explosion:** Group by a column with 100,000+ distinct values. Tests streaming fallback and hash table memory limits.
 5. **Scroll Thrash:** Rapid simulated virtual scrolling (25 requests over 2 seconds) to test cancellation, connection pool contention, and serialization speed.
+
+---
+
+## 6. Data Ingestion & Storage Architecture
+
+1. **Zero-RAM Catalog (`backend/app/core/catalog.py`):**
+   * Registering datasets (`POST /api/datasets/register` or `POST /api/datasets/scan`) reads exclusively from the Parquet footer metadata (`pq.ParquetFile.metadata`).
+   * No row data is parsed or loaded into Python, DuckDB, or Polars heap. Registration takes **0 MB RAM**.
+2. **Directory Auto-Scanning (`POST /api/datasets/scan`):**
+   * Any `.parquet` or `.pqt` files placed in `backend/data/` are discovered and cataloged on-the-fly.
+3. **Pristine Data Cleaning (`clean.py` & `POST /api/datasets/clean-test-data`):**
+   * Purges temporary synthetic datasets (`*test*`, `*synthetic*`), deleting their parquet files and resetting `catalog.json` so production datasets remain isolated.
+4. **Streaming CSV / Parquet Export (`POST /api/query/export`):**
+   * Translates active query filters directly into out-of-core streaming CSV generation, avoiding browser heap limits for large filtered extracts.
+
+---
+
+## 7. Engine Memory & Execution Profiles
+
+* **DuckDB 2.0+ (Out-of-Core):**
+  * Queries Parquet views dynamically via `read_parquet(...)`.
+  * Dedicated `con.cursor()` per request prevents multi-threading locks.
+  * Honors `PRAGMA memory_limit = '8GB'` and uses `PRAGMA temp_directory` to spill large sort buffers and hash tables to disk.
+* **Polars 1.26+/2.x (On-the-Fly Streaming):**
+  * Strictly lazy (`pl.scan_parquet(...)`).
+  * Employs projection pushdown (only reading queried columns) and predicate pushdown (skipping Parquet row groups via metadata min/max statistics).
+  * Executes with `.collect(engine="streaming")`; immediately deallocates intermediate state. Holds 0 MB RAM between queries.
+* **Perspective 5.5+/5.6+ (In-Memory C++):**
+  * Loads Arrow batches into an in-memory `perspective.Table`.
+  * High-speed analytical pivoting at the expense of an uncompressed in-memory footprint.
+  * Explicitly purged via `table.delete()` and `gc.collect()` upon engine deactivation.
