@@ -28,13 +28,9 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
-# Workspace Data & Spill
-backend/data/*.parquet
-backend/data/*.pqt
-backend/data/*.csv
-backend/data/*.tsv
-backend/data/*.xlsx
-backend/data/*.xls
+# Workspace Data & Spill (keeps all your uploaded data files safe and uncommitted)
+backend/data/*
+!backend/data/.gitkeep
 *.duckdb_spill*
 *hyperframe_spill*
 
