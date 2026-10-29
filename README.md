@@ -5,7 +5,7 @@
 [![DuckDB](https://img.shields.io/badge/DuckDB-2.0+-FFF000.svg)](https://duckdb.org/)
 [![Polars](https://img.shields.io/badge/Polars-1.26+-CD792C.svg)](https://pola.rs/)
 [![Perspective](https://img.shields.io/badge/Perspective-5.5+-1f77b4.svg)](https://perspective.finos.org/)
-[![Tests](https://img.shields.io/badge/Tests-19%20Passing-brightgreen.svg)](#-testing--verification)
+[![Tests](https://img.shields.io/badge/Tests-22%20Passing-brightgreen.svg)](#-testing--verification)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 **HyperFrame** is a high-performance ad-hoc analytics workbench and benchmarking engine designed to query, profile, and compare massive Parquet datasets (500MB+, 10M–50M+ rows) on an 8-core workstation.
@@ -20,7 +20,7 @@ Engineered natively for **Windows 10/11**, **macOS**, and **Linux** on **Python 
    * **Studio Workbench:** Daily-driver analytical playground featuring:
      * **Infinite Grid:** AG Grid Community with infinite virtual scrolling, column projection pushdown, quick search, and sorting.
      * **Perspective Pivot Canvas:** Drag-and-drop multidimensional OLAP aggregation with instant grouping, metrics, and GPU-style bar distributions.
-     * **SQL Playground:** Monaco/Prism syntax-highlighted SQL editor with pre-built query templates, formatted execution, and query plan tree rendering.
+     * **SQL Playground:** Monaco/Prism syntax-highlighted SQL editor with dynamic `:dataset` alias, cross-dataset multi-file joins (`JOIN uploaded_file2`), pre-built query templates, and query plan tree rendering.
      * **Streaming CSV Export:** 1-click export of filtered and aggregated results directly via DuckDB/Polars streaming.
    * **Arena Race Mode:** Split-screen race mode running synchronized workloads against two engines simultaneously with real-time latency diffs ($\Delta$ ms), server memory deltas ($\Delta$ MB), and winner badges.
 2. **Instant "Data Weather" Column Profiler:** Reads Parquet metadata with zero RAM materialization to display file size, compression ratio, row groups, uncompressed RAM footprint, and per-column cardinality, null percentages, and quartiles (`q25`, `q50`, `q75`).
@@ -108,7 +108,7 @@ HyperFrame/
 │   │   └── utils/
 │   │       ├── paths.py                # Windows/POSIX path normalizer & temp spill resolver
 │   │       └── serialization.py        # Arrow IPC stream builder & dictionary serializers
-│   ├── tests/                          # Full pytest test suite (19 unit & integration tests)
+│   ├── tests/                          # Full pytest test suite (22 unit & integration tests)
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
