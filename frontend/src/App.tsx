@@ -47,6 +47,10 @@ export const App: React.FC = () => {
 
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
   const [xrayOpen, setXrayOpen] = useState<boolean>(false);
+  const xrayOpenRef = useRef(false);
+  useEffect(() => {
+    xrayOpenRef.current = xrayOpen;
+  }, [xrayOpen]);
   const [tortureOpen, setTortureOpen] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
@@ -199,8 +203,8 @@ export const App: React.FC = () => {
       setTotalMatchingRows(totalRows);
       setReturnedRows(retRows);
 
-      // Fetch EXPLAIN plan for X-Ray
-      if (activeDatasetId) {
+      // Only fetch heavy EXPLAIN plan if X-Ray drawer is currently open (massive scroll performance speedup!)
+      if (activeDatasetId && xrayOpenRef.current) {
         try {
           const planRes = await explainQuery({
             dataset: activeDatasetId,
@@ -216,6 +220,24 @@ export const App: React.FC = () => {
     },
     [activeDatasetId, activeEngine]
   );
+
+  const handleToggleXray = async () => {
+    const nextState = !xrayOpen;
+    setXrayOpen(nextState);
+    if (nextState && activeDatasetId && queryString) {
+      try {
+        const planRes = await explainQuery({
+          dataset: activeDatasetId,
+          engine: activeEngine,
+          raw_sql: queryString,
+          limit: 50,
+        });
+        setPlanString(planRes.plan);
+      } catch {
+        setPlanString('Execution plan unavailable for current query expression.');
+      }
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0d14] text-slate-100">
@@ -316,7 +338,7 @@ export const App: React.FC = () => {
         totalMatchingRows={totalMatchingRows}
         returnedRows={returnedRows}
         xrayOpen={xrayOpen}
-        onToggleXray={() => setXrayOpen(!xrayOpen)}
+        onToggleXray={handleToggleXray}
       />
 
       {/* Torture Benchmark Suite Modal */}
