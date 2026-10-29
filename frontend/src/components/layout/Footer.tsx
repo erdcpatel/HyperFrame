@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Timer,
   Cpu,
@@ -7,7 +7,8 @@ import {
   ChevronUp,
   ChevronDown,
   Activity,
-  Layers
+  Layers,
+  Laptop
 } from 'lucide-react';
 import { QueryWaterfall, SystemTelemetry } from '../../types';
 
@@ -28,6 +29,21 @@ export const Footer: React.FC<Props> = ({
   xrayOpen,
   onToggleXray,
 }) => {
+  const [clientHeapMb, setClientHeapMb] = useState<number | null>(() => {
+    return (window.performance as any)?.memory
+      ? Math.round((window.performance as any).memory.usedJSHeapSize / (1024 * 1024))
+      : null;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if ((window.performance as any)?.memory) {
+        setClientHeapMb(Math.round((window.performance as any).memory.usedJSHeapSize / (1024 * 1024)));
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <footer className="h-10 border-t border-[#1f2b45] bg-[#0c101a] px-4 flex items-center justify-between text-xs select-none z-20">
       {/* Waterfall Breakdown */}
@@ -67,14 +83,14 @@ export const Footer: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Server Health & X-Ray Plan Toggle */}
+      {/* Server & Client Health Metrics + X-Ray Plan Toggle */}
       <div className="flex items-center gap-4">
-        {telemetry && (
-          <div className="flex items-center gap-3 font-mono text-[11px]">
-            {/* CPU */}
-            <div className="flex items-center gap-1 text-slate-300">
+        <div className="flex items-center gap-3 font-mono text-[11px]">
+          {/* Server CPU (from VM) */}
+          {telemetry && (
+            <div className="flex items-center gap-1 text-slate-300" title="Server (VM Host) CPU Load">
               <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-              <span>CPU: <b>{telemetry.cpu_percent_total.toFixed(0)}%</b></span>
+              <span>VM CPU: <b>{telemetry.cpu_percent_total.toFixed(0)}%</b></span>
               {/* Mini per-core sparkline indicator */}
               <div className="flex items-end gap-0.5 h-3 w-12 ml-1">
                 {telemetry.cpu_percent_per_core.slice(0, 8).map((coreLoad, idx) => (
@@ -87,19 +103,29 @@ export const Footer: React.FC<Props> = ({
                 ))}
               </div>
             </div>
+          )}
 
-            {/* RAM */}
-            <div className="flex items-center gap-1 text-slate-300">
+          {/* Server RAM (from VM) */}
+          {telemetry && (
+            <div className="flex items-center gap-1 text-slate-300" title="Server (VM Host) Process Resident Memory (RSS)">
               <HardDrive className="w-3.5 h-3.5 text-sky-400" />
-              <span>RAM: <b>{telemetry.memory_rss_mb.toFixed(0)}MB</b></span>
+              <span>VM RAM: <b>{telemetry.memory_rss_mb.toFixed(0)}MB</b></span>
               {waterfall && waterfall.rss_delta_mb !== 0 && (
                 <span className={`text-[10px] ${waterfall.rss_delta_mb > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                   ({waterfall.rss_delta_mb > 0 ? `+${waterfall.rss_delta_mb}` : waterfall.rss_delta_mb}MB)
                 </span>
               )}
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Client Browser Heap RAM */}
+          {clientHeapMb !== null && (
+            <div className="flex items-center gap-1 text-slate-300" title="Local Client Browser Tab JS Heap Memory">
+              <Laptop className="w-3.5 h-3.5 text-violet-400" />
+              <span>Client Heap: <b>{clientHeapMb}MB</b></span>
+            </div>
+          )}
+        </div>
 
         {/* X-Ray Inspector Toggle Button */}
         <button

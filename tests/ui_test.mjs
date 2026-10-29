@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const DEBUG_PORT = 9230;
+const DEBUG_PORT = 9220 + Math.floor(Math.random() * 50);
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

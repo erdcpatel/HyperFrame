@@ -114,15 +114,16 @@ export const Header: React.FC<Props> = ({
         )}
 
         {/* Server Memory & Force GC */}
-        <div className="flex items-center gap-1.5 bg-[#131b2e] px-2.5 py-1 rounded-lg border border-[#24324f]">
+        <div className="flex items-center gap-1.5 bg-[#131b2e] px-2.5 py-1 rounded-lg border border-[#24324f]" title="Server (VM Host) Process Resident Memory (RSS)">
           <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
           <span className="text-xs font-mono text-slate-300">
+            <span className="text-slate-500 text-[10px] mr-1">VM:</span>
             {serverRssMb.toFixed(0)} <span className="text-slate-500 text-[10px]">MB RSS</span>
           </span>
           <button
             onClick={onPurgeMemory}
             className="p-1 hover:bg-[#1e2a47] rounded text-slate-400 hover:text-rose-400 transition-colors ml-1"
-            title="Force GC & Unload Memory"
+            title="Force GC & Unload Memory on VM"
           >
             <Trash2 className="w-3 h-3" />
           </button>
