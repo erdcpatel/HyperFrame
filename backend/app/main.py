@@ -60,7 +60,55 @@ def health_check():
         "threads": settings.DUCKDB_THREADS
     }
 
-# Mount frontend if built
+# Mount frontend if built, or serve a helpful guidance page if not built yet
 frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+else:
+    from fastapi.responses import HTMLResponse
+
+    @app.get("/", response_class=HTMLResponse)
+    def frontend_status():
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HyperFrame Server Running</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0c101a; color: #e2e8f0; margin: 0; padding: 40px; display: flex; justify-content: center; align-items: center; min-height: 100vh; box-sizing: border-box; }
+    .card { background: #131b2e; border: 1px solid #24324f; border-radius: 12px; max-width: 650px; width: 100%; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    h1 { color: #60a5fa; margin-top: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+    .badge { background: #1e3a8a; color: #93c5fd; font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 600; text-transform: uppercase; }
+    p { font-size: 13.5px; line-height: 1.6; color: #94a3b8; }
+    .code-box { background: #0a0d16; border: 1px solid #1f2b45; border-radius: 8px; padding: 12px 16px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; color: #38bdf8; margin: 10px 0; }
+    .btn { display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-right: 10px; transition: background 0.2s; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-outline { background: transparent; border: 1px solid #3b82f6; color: #60a5fa; }
+    .btn-outline:hover { background: #1e293b; }
+    a { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>⚡ HyperFrame Backend <span class="badge">Running</span></h1>
+    <p>The FastAPI analytical server is active on <strong>port 8000</strong>.</p>
+    
+    <p><strong>To launch the UI workbench:</strong></p>
+    
+    <p><strong>Option 1: Development Server (Recommended)</strong><br>
+    In a separate terminal window, start Vite:</p>
+    <div class="code-box">cd frontend<br>npm install<br>npm run dev</div>
+    <p>Then open <a href="http://localhost:5173" target="_blank">http://localhost:5173</a> in your browser.</p>
+
+    <p><strong>Option 2: Standalone Production Build</strong><br>
+    Compile the frontend assets into <code>frontend/dist</code>:</p>
+    <div class="code-box">cd frontend<br>npm install<br>npm run build</div>
+    <p>Then restart the server or refresh this page at <strong>http://localhost:8000</strong>.</p>
+
+    <div style="margin-top: 24px;">
+      <a href="/docs" class="btn">Open Swagger API Docs</a>
+      <a href="/api/health" class="btn btn-outline">System Health Check</a>
+    </div>
+  </div>
+</body>
+</html>"""

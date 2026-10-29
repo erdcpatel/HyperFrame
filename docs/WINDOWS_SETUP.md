@@ -28,6 +28,10 @@ pip install -r backend\requirements.txt
 ```powershell
 cd frontend
 npm install
+
+# Build static bundle for standalone hosting (creates frontend/dist):
+npm run build
+
 cd ..
 ```
 
@@ -61,11 +65,25 @@ Windows uses `asyncio.ProactorEventLoop` by default in Python 3.8+.
 When executing blocking engine queries (DuckDB/Polars), never run them directly in the async event loop thread. Always use standard FastAPI synchronous route functions (`def query_endpoint(...)`) or `anyio.to_thread.run_sync()`, allowing FastAPI's background threadpool to handle the CPU-bound query without starving WebSocket telemetry.
 
 ### 4. Running HyperFrame on Windows
-We provide `run.py` at the root which handles Windows process creation safely:
+
+#### Option A: Standalone Single-Server (Production)
+If you ran `npm run build` in `frontend/`:
 ```powershell
 python run.py
 ```
-This boots both the FastAPI backend (port 8000) and serves the built Vite frontend.
+Open **http://localhost:8000** in your browser. This serves both the backend API and the full UI workbench.
+
+#### Option B: Live Development Mode (with Hot Reloading)
+* **Terminal 1 (Backend):**
+  ```powershell
+  python run.py
+  ```
+* **Terminal 2 (Frontend Dev Server):**
+  ```powershell
+  cd frontend
+  npm run dev
+  ```
+Open **http://localhost:5173** in your browser. Vite proxies API and WebSocket requests to `localhost:8000` with hot-module reload!
 
 ### 5. Cleaning Test Data on Windows
 To purge all synthetic and test datasets and reset the catalog:
