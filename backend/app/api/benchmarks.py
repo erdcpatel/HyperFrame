@@ -27,10 +27,29 @@ def run_torture_suite(req: TortureRequest):
     col_names = [c.name for c in weather.columns]
 
     # Dynamically pick columns based on dataset schema
-    sym_col = next((c for c in ["symbol", "desk", "region", "status"] if c in col_names), col_names[0])
-    num_col = next((c for c in ["notional", "price", "amount", "revenue", "execution_latency_ms"] if c in col_names), col_names[1] if len(col_names) > 1 else col_names[0])
-    id_col = next((c for c in ["trade_id", "id", "order_id", "trader_id"] if c in col_names), col_names[0])
-    high_card_col = next((c for c in ["account_id", "trader_id", "user_id", "customer_id"] if c in col_names), id_col)
+    str_cols = [c for c in weather.columns if any(t in c.dtype.lower() for t in ["str", "varchar", "utf8", "text", "char"])]
+    if str_cols:
+        cat_c = next((c for c in str_cols if c.name.lower() in ["symbol", "desk", "region", "status", "category", "type", "city", "country"]), str_cols[0])
+        sym_col = cat_c.name
+        needle_val = cat_c.min_value if cat_c.min_value else "NVDA"
+    else:
+        sym_col = weather.columns[0].name
+        needle_val = weather.columns[0].min_value or "1"
+
+    # Metric column: ensure it is truly numeric so SUM() functions don't fail
+    num_cols = [c for c in weather.columns if any(t in c.dtype.lower() for t in ["int", "float", "double", "decimal", "numeric", "real", "long"])]
+    if num_cols:
+        metric_c = next((c for c in num_cols if c.name.lower() in ["notional", "price", "amount", "revenue", "execution_latency_ms", "value", "cost", "total", "sales"]), num_cols[-1])
+        num_col = metric_c.name
+        agg_func = "sum"
+    else:
+        num_col = sym_col
+        agg_func = "count"
+
+    # ID column and High Cardinality column
+    id_col = next((c.name for c in weather.columns if any(k in c.name.lower() for k in ["id", "key", "code", "index"])), weather.columns[0].name)
+    sorted_by_card = sorted(weather.columns, key=lambda c: getattr(c, "approx_unique", 0), reverse=True)
+    high_card_col = sorted_by_card[0].name if sorted_by_card else id_col
 
     results: list[TortureWorkloadResult] = []
 
@@ -42,7 +61,7 @@ def run_torture_suite(req: TortureRequest):
             "query": HyperQuery(
                 dataset=req.dataset_id,
                 select=[id_col, sym_col, num_col],
-                filters=[HyperFilter(column=sym_col, operator="contains", value="NVDA")],
+                filters=[HyperFilter(column=sym_col, operator="contains", value=needle_val)],
                 limit=100
             )
         },
@@ -60,12 +79,12 @@ def run_torture_suite(req: TortureRequest):
         {
             "id": "workload_3_low_pivot",
             "name": "3. Low-Card Pivot",
-            "description": f"Group by {sym_col} with SUM({num_col}) and COUNT({id_col})",
+            "description": f"Group by {sym_col} with {agg_func.upper()}({num_col}) and COUNT({id_col})",
             "query": HyperQuery(
                 dataset=req.dataset_id,
                 groupBy=[sym_col],
                 aggregations=[
-                    HyperAggregation(column=num_col, function="sum", alias="total_val"),
+                    HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
                     HyperAggregation(column=id_col, function="count", alias="row_count")
                 ],
                 orderBy=[HyperSort(column="total_val", direction="desc")],
@@ -80,7 +99,7 @@ def run_torture_suite(req: TortureRequest):
                 dataset=req.dataset_id,
                 groupBy=[high_card_col],
                 aggregations=[
-                    HyperAggregation(column=num_col, function="sum", alias="total_val"),
+                    HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
                     HyperAggregation(column=id_col, function="count", alias="row_count")
                 ],
                 limit=200

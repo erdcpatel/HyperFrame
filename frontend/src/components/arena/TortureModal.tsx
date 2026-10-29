@@ -150,10 +150,19 @@ export const TortureModal: React.FC<Props> = ({ open, onClose, datasetId }) => {
                       <td className="py-2 px-3 font-semibold text-slate-200">
                         <div>{r.workload_name}</div>
                         <div className="text-[10px] text-slate-500 font-sans">{r.description}</div>
+                        {r.status !== 'SUCCESS' && r.error_message && (
+                          <div className="text-[10px] text-rose-400 mt-0.5 font-mono truncate max-w-xs" title={r.error_message}>
+                            {r.error_message}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 px-3">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          r.engine === 'duckdb' ? 'bg-blue-500/20 text-blue-300' : 'bg-indigo-500/20 text-indigo-300'
+                          r.engine === 'duckdb'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : r.engine === 'polars'
+                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         }`}>
                           {r.engine}
                         </span>

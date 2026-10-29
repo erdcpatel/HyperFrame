@@ -87,11 +87,30 @@ class PerspectiveEngine(BaseEngine):
                 psp_filters.append([f.column, psp_op, f.value])
             view_config["filter"] = psp_filters
 
+        alias_to_col: dict[str, str] = {}
+        if query.aggregations:
+            aggregates: dict[str, str] = {}
+            for agg in query.aggregations:
+                func = agg.function.lower()
+                if func == "avg":
+                    func = "mean"
+                aggregates[agg.column] = func
+                if agg.alias:
+                    alias_to_col[agg.alias] = agg.column
+            view_config["aggregates"] = aggregates
+
         if query.groupBy:
             view_config["group_by"] = query.groupBy
 
         if query.orderBy:
-            view_config["sort"] = [[s.column, s.direction] for s in query.orderBy]
+            sort_list = []
+            table_cols = set(table.columns())
+            for s in query.orderBy:
+                actual_col = alias_to_col.get(s.column, s.column)
+                if actual_col in table_cols:
+                    sort_list.append([actual_col, s.direction.lower()])
+            if sort_list:
+                view_config["sort"] = sort_list
 
         view = table.view(**view_config)
         try:
