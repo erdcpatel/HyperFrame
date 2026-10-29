@@ -1,20 +1,23 @@
-import React, { useState } from 'react';
-import { Play, FileCode, CheckCircle2, AlertCircle } from 'lucide-react';
-import { EngineType, HyperQuery, QueryWaterfall } from '../../types';
+import React, { useState, useRef } from 'react';
+import { Play, FileCode, CheckCircle2, AlertCircle, Columns, Sparkles } from 'lucide-react';
+import { ColumnWeather, EngineType, HyperQuery, QueryWaterfall } from '../../types';
 import { runQuery, explainQuery } from '../../services/api';
 import { SyntaxHighlighter } from '../common/SyntaxHighlighter';
 
 interface Props {
   datasetId: string;
   engine: EngineType;
+  columns?: ColumnWeather[];
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
 }
 
 export const QueryEditor: React.FC<Props> = ({
   datasetId,
   engine,
+  columns = [],
   onWaterfallUpdate,
 }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const defaultSql = `SELECT 
     symbol, 
     desk, 
@@ -29,9 +32,28 @@ LIMIT 50;`;
 
   const [rawSql, setRawSql] = useState(defaultSql);
   const [data, setData] = useState<any[]>([]);
-  const [columns, setColumns] = useState<string[]>([]);
+  const [resultColumns, setResultColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const insertColumnAtCursor = (colName: string) => {
+    if (!textareaRef.current) {
+      setRawSql((prev) => `${prev} ${colName}`);
+      return;
+    }
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const textBefore = rawSql.substring(0, start);
+    const textAfter = rawSql.substring(end);
+    const updated = `${textBefore}${colName}${textAfter}`;
+    setRawSql(updated);
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + colName.length, start + colName.length);
+    }, 0);
+  };
 
   const handleRun = async () => {
     if (!rawSql.trim()) return;
@@ -50,7 +72,7 @@ LIMIT 50;`;
       const tRender = performance.now() - tStart;
 
       setData(res.data || []);
-      setColumns(res.columns);
+      setResultColumns(res.columns);
       onWaterfallUpdate(
         { ...res.waterfall, client_render_ms: Math.round(tRender) },
         res.query_string,
@@ -123,9 +145,28 @@ ORDER BY count DESC;`)
 
       {/* Editor & Output Splitter */}
       <div className="flex-1 grid grid-rows-2 min-h-0">
-        {/* SQL Editor Area */}
+        {/* SQL Editor Area with Column Chips Bar */}
         <div className="p-3 border-b border-[#1f2b45] flex flex-col min-h-0 bg-[#0d121f]">
+          {columns.length > 0 && (
+            <div className="mb-2 flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1 font-semibold text-slate-400 shrink-0">
+                <Columns className="w-3 h-3 text-blue-400" />
+                Columns:
+              </span>
+              {columns.map((c) => (
+                <button
+                  key={c.name}
+                  onClick={() => insertColumnAtCursor(c.name)}
+                  className="px-2 py-0.5 rounded bg-[#162035] hover:bg-blue-600/30 hover:text-blue-300 border border-[#24324f] text-slate-300 font-mono text-[10px] shrink-0 transition-colors"
+                  title={`Insert '${c.name}' (${c.dtype}) at cursor`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
           <textarea
+            ref={textareaRef}
             value={rawSql}
             onChange={(e) => setRawSql(e.target.value)}
             className="w-full h-full bg-[#090d16] border border-[#24324f] rounded-lg p-3 font-mono text-xs text-blue-300 outline-none focus:border-blue-500 resize-none leading-relaxed"
@@ -148,7 +189,7 @@ ORDER BY count DESC;`)
               <table className="w-full text-left text-xs font-mono">
                 <thead className="bg-[#141b2c] border-b border-[#24324f] text-slate-300 sticky top-0">
                   <tr>
-                    {columns.map((c) => (
+                    {resultColumns.map((c) => (
                       <th key={c} className="py-2 px-3 font-semibold text-slate-300">{c}</th>
                     ))}
                   </tr>
@@ -156,7 +197,7 @@ ORDER BY count DESC;`)
                 <tbody className="divide-y divide-[#172238]">
                   {data.map((row, rIdx) => (
                     <tr key={rIdx} className="hover:bg-[#121929]">
-                      {columns.map((c) => (
+                      {resultColumns.map((c) => (
                         <td key={c} className="py-1.5 px-3 text-slate-300 truncate max-w-xs">
                           {String(row[c] ?? '')}
                         </td>

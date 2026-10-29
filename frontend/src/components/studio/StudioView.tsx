@@ -91,6 +91,7 @@ export const StudioView: React.FC<Props> = React.memo(({
           <QueryEditor
             datasetId={datasetId}
             engine={engine}
+            columns={columns}
             onWaterfallUpdate={onWaterfallUpdate}
           />
         )}

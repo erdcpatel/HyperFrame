@@ -47,13 +47,15 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
     onWaterfallUpdateRef.current = onWaterfallUpdate;
   }, [onWaterfallUpdate]);
 
-  // Derive column definitions from dataset schema
+  // Derive column definitions from dataset schema with primary key pinned left
   const colDefs: ColDef[] = useMemo(() => {
-    return columns.map((col) => {
+    return columns.map((col, idx) => {
       const isNum = col.dtype.toLowerCase().includes('int') || col.dtype.toLowerCase().includes('float') || col.dtype.toLowerCase().includes('double');
+      const isPrimaryKey = idx === 0 || ['id', 'trade_id', 'key', 'index'].includes(col.name.toLowerCase());
       return {
         field: col.name,
         headerName: col.name,
+        pinned: isPrimaryKey ? 'left' : undefined,
         sortable: true,
         filter: isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter',
         resizable: true,
