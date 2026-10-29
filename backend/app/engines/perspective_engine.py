@@ -14,12 +14,21 @@ from backend.app.utils.paths import to_posix_path
 
 # Allow high-memory allocation for Perspective C++ in-memory columnar tables (default 12.0 GB)
 MAX_PERSPECTIVE_RAM_GB = float(os.getenv("HYPERFRAME_MAX_PERSPECTIVE_RAM_GB", "12.0"))
+# Datasets larger than this threshold (MB) use smart compute-pushdown for aggregations/pivots
+PSP_PUSHDOWN_THRESHOLD_MB = float(os.getenv("HYPERFRAME_PSP_PUSHDOWN_THRESHOLD_MB", "15.0"))
 
 class PerspectiveEngine(BaseEngine):
     def __init__(self):
         self._server = perspective.Server()
         self._client = self._server.new_local_client()
         self._active_tables: dict[str, Any] = {}
+        self._duckdb: Optional[Any] = None
+
+    def _get_duckdb(self):
+        if self._duckdb is None:
+            from backend.app.engines.duckdb_engine import DuckDBEngine
+            self._duckdb = DuckDBEngine()
+        return self._duckdb
 
     @property
     def name(self) -> str:
@@ -32,6 +41,7 @@ class PerspectiveEngine(BaseEngine):
     def load_dataset(self, dataset_id: str, file_path: str) -> None:
         """
         Loads the Parquet file into an in-memory C++ Perspective Table using chunked batch ingestion.
+        Loads all columns so the cached table can satisfy all subsequent queries.
         Tracks table instance for explicit deletion on unload.
         """
         if dataset_id in self._active_tables:
@@ -74,8 +84,44 @@ class PerspectiveEngine(BaseEngine):
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         """
-        Executes query on the in-memory Perspective Table using Perspective's view API.
+        Executes query on Perspective. If dataset is larger than threshold and an aggregation
+        is requested (or system memory is constrained), uses Smart Compute-Pushdown via DuckDB
+        vectorized disk scan, then renders the result through Perspective's C++ view API.
         """
+        posix_p = to_posix_path(file_path)
+        file_size_mb = Path(posix_p).stat().st_size / (1024 * 1024) if Path(posix_p).exists() else 0.0
+        mem = psutil.virtual_memory()
+        avail_mb = mem.available / (1024 * 1024)
+        estimated_ram_mb = file_size_mb * 7
+        max_allowed_mb = MAX_PERSPECTIVE_RAM_GB * 1024
+
+        should_pushdown = (
+            file_size_mb >= PSP_PUSHDOWN_THRESHOLD_MB and (query.groupBy or query.aggregations)
+        ) or (estimated_ram_mb > max_allowed_mb or estimated_ram_mb > (avail_mb + 512))
+
+        if should_pushdown:
+            duck = self._get_duckdb()
+            intermediate_table, duck_plan, total_matching = duck.execute_query(query, file_path)
+
+            # Ingest the compact intermediate result into Perspective for C++ view creation & serialization
+            temp_table = self._client.table(intermediate_table)
+            view = temp_table.view()
+            arrow_bytes = view.to_arrow()
+            try:
+                view.delete()
+                temp_table.delete()
+            except Exception:
+                pass
+
+            reader = pa.ipc.open_stream(arrow_bytes)
+            res_table = reader.read_all().combine_chunks()
+
+            plan_str = (
+                f"Perspective Hybrid Pushdown (Pre-aggregated via DuckDB 2.0 Vector Engine -> "
+                f"Perspective View: {len(res_table.column_names)} cols, {res_table.num_rows} rows returned of {total_matching})"
+            )
+            return res_table, plan_str, total_matching
+
         ds_id = query.dataset
         if ds_id not in self._active_tables:
             self.load_dataset(ds_id, file_path)
@@ -146,6 +192,10 @@ class PerspectiveEngine(BaseEngine):
         return res_table, plan_str, total_rows
 
     def explain(self, query: HyperQuery, file_path: str) -> str:
+        posix_p = to_posix_path(file_path)
+        file_size_mb = Path(posix_p).stat().st_size / (1024 * 1024) if Path(posix_p).exists() else 0.0
+        if file_size_mb >= PSP_PUSHDOWN_THRESHOLD_MB and (query.groupBy or query.aggregations):
+            return f"Perspective Hybrid Pushdown: Pre-aggregated with DuckDB 2.0 Vector Scan on '{query.dataset}' ({file_size_mb:.1f} MB), materialized into Perspective C++ view for 60 FPS presentation."
         return f"Perspective In-Memory Engine: Direct C++ Apache Arrow buffer execution on hosted table '{query.dataset}'."
 
     def unload(self) -> None:
