@@ -9,6 +9,7 @@ interface Props {
   engine: EngineType;
   columns?: ColumnWeather[];
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
+  onLoadingChange?: (loading: boolean, message?: string) => void;
 }
 
 const SQL_KEYWORDS = [
@@ -38,6 +39,7 @@ export const QueryEditor: React.FC<Props> = ({
   engine,
   columns = [],
   onWaterfallUpdate,
+  onLoadingChange,
 }) => {
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -84,6 +86,7 @@ LIMIT 50;`;
     if (!queryToRun.trim()) return;
     setLoading(true);
     setError(null);
+    onLoadingChange?.(true, `Running SQL on ${engine.toUpperCase()}...`);
     try {
       const q: HyperQuery = {
         dataset: datasetId,
@@ -108,6 +111,7 @@ LIMIT 50;`;
       setError(err.message || 'Query execution failed');
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
   };
 

@@ -9,7 +9,8 @@ import {
   Activity,
   PanelLeftClose,
   PanelLeftOpen,
-  Cloud
+  Cloud,
+  RotateCw
 } from 'lucide-react';
 import { EngineType } from '../../types';
 
@@ -24,6 +25,8 @@ interface Props {
   totalMatchingRows?: number;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  isQueryLoading?: boolean;
+  loadingMessage?: string;
 }
 
 export const Header: React.FC<Props> = ({
@@ -36,7 +39,9 @@ export const Header: React.FC<Props> = ({
   onOpenTortureModal,
   totalMatchingRows,
   sidebarOpen,
-  onToggleSidebar
+  onToggleSidebar,
+  isQueryLoading,
+  loadingMessage
 }) => {
   return (
     <header className="h-14 border-b border-[#1f2b45] bg-[#0c101a] px-4 flex items-center justify-between select-none">
@@ -111,17 +116,33 @@ export const Header: React.FC<Props> = ({
       {/* Actions & Engine Controls */}
       <div className="flex items-center gap-3">
         {mode === 'studio' && (
-          <div className="flex items-center gap-2 bg-[#131b2e] px-2.5 py-1 rounded-lg border border-[#24324f]">
-            <span className="text-[11px] text-slate-400 font-mono">Engine:</span>
-            <select
-              value={activeEngine}
-              onChange={(e) => onEngineChange(e.target.value as EngineType)}
-              className="bg-transparent text-xs font-semibold text-blue-400 outline-none cursor-pointer"
-            >
-              <option value="duckdb" className="bg-[#131b2e] text-slate-200">DuckDB 2.0 (Out-of-Core)</option>
-              <option value="polars" className="bg-[#131b2e] text-slate-200">Polars 2.x (Streaming)</option>
-              <option value="perspective" className="bg-[#131b2e] text-slate-200">Perspective 5.x (In-Memory)</option>
-            </select>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-[#131b2e] px-2.5 py-1 rounded-lg border border-[#24324f]">
+              <span className="text-[11px] text-slate-400 font-mono">Engine:</span>
+              <select
+                value={activeEngine}
+                onChange={(e) => onEngineChange(e.target.value as EngineType)}
+                className="bg-transparent text-xs font-semibold text-blue-400 outline-none cursor-pointer"
+              >
+                <option value="duckdb" className="bg-[#131b2e] text-slate-200">DuckDB 2.0 (Out-of-Core)</option>
+                <option value="polars" className="bg-[#131b2e] text-slate-200">Polars 2.x (Streaming)</option>
+                <option value="perspective" className="bg-[#131b2e] text-slate-200">Perspective 5.x (In-Memory)</option>
+              </select>
+            </div>
+
+            {/* Live Engine Busy / Loading Indicator */}
+            {isQueryLoading ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/15 border border-blue-500/40 text-blue-300 text-xs font-mono shadow-sm shadow-blue-500/20 animate-pulse">
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-blue-400 shrink-0" />
+                <span className="font-bold uppercase text-[11px] text-blue-300">{activeEngine}</span>
+                <span className="text-[10px] text-slate-300 truncate max-w-[170px]">{loadingMessage || 'Executing query...'}</span>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Engine Ready</span>
+              </div>
+            )}
           </div>
         )}
 

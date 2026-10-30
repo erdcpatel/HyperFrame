@@ -18,6 +18,7 @@ interface Props {
   engine: EngineType;
   columns: ColumnWeather[];
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
+  onLoadingChange?: (loading: boolean, message?: string) => void;
 }
 
 export const PerspectiveCanvas: React.FC<Props> = ({
@@ -25,6 +26,7 @@ export const PerspectiveCanvas: React.FC<Props> = ({
   engine,
   columns,
   onWaterfallUpdate,
+  onLoadingChange,
 }) => {
   const colNames = columns.map((c) => c.name);
 
@@ -42,6 +44,7 @@ export const PerspectiveCanvas: React.FC<Props> = ({
   const executePivot = async () => {
     if (!datasetId) return;
     setLoading(true);
+    onLoadingChange?.(true, `Perspective Pivot: Aggregating ${metricCol || 'data'}...`);
     try {
       const q: HyperQuery = groupByCol
         ? {
@@ -85,6 +88,7 @@ export const PerspectiveCanvas: React.FC<Props> = ({
       console.error('Pivot execution failed:', err);
     } finally {
       setLoading(false);
+      onLoadingChange?.(false);
     }
   };
 

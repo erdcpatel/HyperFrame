@@ -40,6 +40,14 @@ export const App: React.FC = () => {
   const [weather, setWeather] = useState<DatasetWeather | null>(null);
   const [loadingWeather, setLoadingWeather] = useState<boolean>(false);
 
+  const [isQueryLoading, setIsQueryLoading] = useState<boolean>(false);
+  const [queryLoadingMessage, setQueryLoadingMessage] = useState<string>('');
+
+  const handleLoadingChange = useCallback((loading: boolean, msg?: string) => {
+    setIsQueryLoading(loading);
+    setQueryLoadingMessage(msg || '');
+  }, []);
+
   const [waterfall, setWaterfall] = useState<QueryWaterfall | null>(null);
   const [queryString, setQueryString] = useState<string>('');
   const [planString, setPlanString] = useState<string>('');
@@ -255,6 +263,8 @@ export const App: React.FC = () => {
         totalMatchingRows={totalMatchingRows}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        isQueryLoading={isQueryLoading || loadingWeather}
+        loadingMessage={loadingWeather ? 'Inspecting schema & weather...' : queryLoadingMessage}
       />
 
       {/* Main Workspace Splitter */}
@@ -301,6 +311,7 @@ export const App: React.FC = () => {
                 engine={activeEngine}
                 columns={weather.columns}
                 onWaterfallUpdate={handleWaterfallUpdate}
+                onLoadingChange={handleLoadingChange}
               />
             ) : (
               <ArenaView datasetId={activeDatasetId} columns={weather.columns} />

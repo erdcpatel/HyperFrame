@@ -583,15 +583,36 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
             </button>
           </div>
 
-          {/* Quick Action: Live Preview Button */}
+          {/* Action Buttons: Instant Ingestion or Live Preview */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleDownloadAndIngest}
+              disabled={downloading || registering || !activeProfile}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-950/40 transition-all disabled:opacity-50"
+              title="Directly download & ingest all Parquet files from this S3 folder into local storage"
+            >
+              {downloading ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              <span>{downloading ? 'Downloading...' : 'Download & Ingest'}</span>
+            </button>
+
+            <button
+              onClick={handleRegisterAndOpen}
+              disabled={registering || downloading || !activeProfile}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#15233c] hover:bg-[#1c2e4f] border border-emerald-500/40 text-emerald-300 text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
+              title="Stream query directly over S3 range requests (Zero-Copy)"
+            >
+              {registering ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-emerald-400" />}
+              <span>{registering ? 'Registering...' : 'Stream (Zero-Copy)'}</span>
+            </button>
+
             <button
               onClick={handlePreview}
               disabled={loadingPreview || !activeProfile}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#16223b] hover:bg-[#1d2d4f] border border-[#27385d] text-sky-300 text-xs font-semibold shadow-sm transition-all"
+              title="Inspect 10 sample records and schema without downloading"
             >
               <Eye className="w-3.5 h-3.5 text-sky-400" />
-              <span>{loadingPreview ? 'Scanning...' : 'Live Preview'}</span>
+              <span>{loadingPreview ? 'Scanning...' : 'Inspect Sample'}</span>
             </button>
           </div>
         </div>
@@ -610,14 +631,51 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
                 </span>
               )}
             </div>
-            <div className="w-48">
-              <input
-                type="text"
-                placeholder="Search in folder..."
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full bg-[#080d16] border border-[#1e2a42] rounded px-2 py-0.5 text-xs text-slate-200 outline-none placeholder-slate-600 font-mono"
-              />
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1 text-[11px] text-slate-300 font-sans cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={recursiveGlob}
+                  onChange={(e) => setRecursiveGlob(e.target.checked)}
+                  className="w-3 h-3 rounded bg-[#162035] text-blue-600 cursor-pointer"
+                />
+                <span>Include Subfolders (**/*)</span>
+              </label>
+
+              <div className="w-44">
+                <input
+                  type="text"
+                  placeholder="Search in folder..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className="w-full bg-[#080d16] border border-[#1e2a42] rounded px-2 py-0.5 text-xs text-slate-200 outline-none placeholder-slate-600 font-mono"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Prominent Ingestion & Download Progress Notice (Visible across Explorer) */}
+        {(downloading || registering) && (
+          <div className="m-4 p-4 rounded-xl bg-blue-500/15 border border-blue-500/40 text-blue-200 text-xs flex items-center justify-between shadow-lg shadow-blue-950/40 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-600/30 border border-blue-500/50 flex items-center justify-center shrink-0">
+                <RotateCw className="w-5 h-5 animate-spin text-blue-400" />
+              </div>
+              <div>
+                <div className="font-bold text-white text-sm flex items-center gap-2">
+                  <span>{downloading ? 'Downloading S3 Dataset to Local Disk...' : 'Configuring Remote S3 Stream...'}</span>
+                  <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono text-[11px] border border-blue-500/30">
+                    {targetDatasetId}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono mt-0.5">
+                  {actionStatus || (downloading ? `Transferring Parquet files from ${activeProfile?.bucket}/${currentPrefix} via Boto3...` : `Registering DuckDB/Polars streaming path...`)}
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono hidden md:block">
+              Please wait while files are processed & registered
             </div>
           </div>
         )}

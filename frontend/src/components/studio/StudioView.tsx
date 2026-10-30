@@ -11,6 +11,7 @@ interface Props {
   engine: EngineType;
   columns: ColumnWeather[];
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
+  onLoadingChange?: (loading: boolean, message?: string) => void;
 }
 
 export const StudioView: React.FC<Props> = React.memo(({
@@ -18,6 +19,7 @@ export const StudioView: React.FC<Props> = React.memo(({
   engine,
   columns,
   onWaterfallUpdate,
+  onLoadingChange,
 }) => {
   const [filters, setFilters] = useState<HyperFilter[]>([]);
   const [quickSearch, setQuickSearch] = useState('');
@@ -76,6 +78,7 @@ export const StudioView: React.FC<Props> = React.memo(({
             filters={filters}
             quickSearch={quickSearch}
             onWaterfallUpdate={onWaterfallUpdate}
+            onLoadingChange={onLoadingChange}
           />
         )}
 
@@ -85,6 +88,7 @@ export const StudioView: React.FC<Props> = React.memo(({
             engine={engine}
             columns={columns}
             onWaterfallUpdate={onWaterfallUpdate}
+            onLoadingChange={onLoadingChange}
           />
         )}
 
@@ -94,6 +98,7 @@ export const StudioView: React.FC<Props> = React.memo(({
             engine={engine}
             columns={columns}
             onWaterfallUpdate={onWaterfallUpdate}
+            onLoadingChange={onLoadingChange}
           />
         )}
       </div>

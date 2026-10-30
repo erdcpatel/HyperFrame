@@ -15,6 +15,7 @@ interface Props {
   filters: HyperFilter[];
   quickSearch: string;
   onWaterfallUpdate: (w: QueryWaterfall, queryStr: string, totalRows: number, returnedRows: number) => void;
+  onLoadingChange?: (loading: boolean, message?: string) => void;
 }
 
 // Stable defaultColDef defined outside component to prevent AG Grid recreation on parent re-renders
@@ -38,14 +39,22 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
   filters,
   quickSearch,
   onWaterfallUpdate,
+  onLoadingChange,
 }) => {
   const gridRef = useRef<AgGridReact>(null);
+  const [isFetching, setIsFetching] = useState<boolean>(false);
+  const [fetchMessage, setFetchMessage] = useState<string>('');
 
   // Keep a stable ref for onWaterfallUpdate so datasource does not re-instantiate on telemetry ticks
   const onWaterfallUpdateRef = useRef(onWaterfallUpdate);
   useEffect(() => {
     onWaterfallUpdateRef.current = onWaterfallUpdate;
   }, [onWaterfallUpdate]);
+
+  const onLoadingChangeRef = useRef(onLoadingChange);
+  useEffect(() => {
+    onLoadingChangeRef.current = onLoadingChange;
+  }, [onLoadingChange]);
 
   // Derive column definitions from dataset schema with primary key pinned left
   const colDefs: ColDef[] = useMemo(() => {
@@ -74,6 +83,10 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
   const datasource: IDatasource = useMemo(() => {
     return {
       getRows: async (params: IGetRowsParams) => {
+        const msg = `Rows ${params.startRow.toLocaleString()}–${params.endRow.toLocaleString()}`;
+        setIsFetching(true);
+        setFetchMessage(msg);
+        onLoadingChangeRef.current?.(true, msg);
         try {
           setGridError(null);
           const tStart = performance.now();
@@ -103,6 +116,9 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
           console.error('AG Grid datasource error:', err);
           setGridError(detail);
           params.failCallback();
+        } finally {
+          setIsFetching(false);
+          onLoadingChangeRef.current?.(false);
         }
       },
     };
@@ -115,7 +131,27 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
   }, [datasource]);
 
   return (
-    <div className="w-full h-full ag-theme-alpine-dark flex-1 relative">
+    <div className="w-full h-full ag-theme-alpine-dark flex-1 relative overflow-hidden">
+      {/* Top Indeterminate Loading Bar during Query Execution */}
+      {isFetching && (
+        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-950/60 overflow-hidden z-20">
+          <div className="h-full bg-gradient-to-r from-blue-500 via-sky-300 to-indigo-500 animate-pulse w-full shadow-sm shadow-sky-400" />
+        </div>
+      )}
+
+      {/* Floating Engine Query Status HUD */}
+      {isFetching && (
+        <div className="absolute bottom-5 right-6 z-20 flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-[#0c1220]/95 backdrop-blur-md border border-blue-500/40 shadow-2xl shadow-black/70 text-xs font-mono text-blue-300 pointer-events-none select-none transition-all">
+          <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5 font-bold text-white uppercase text-[11px]">
+              <span className="text-blue-400">{engine}</span>
+              <span className="text-slate-400 font-normal">| Querying Engine</span>
+            </div>
+            <div className="text-[10px] text-slate-300">{fetchMessage}</div>
+          </div>
+        </div>
+      )}
       {gridError && (
         <div className="absolute inset-0 bg-[#0a0d16]/95 backdrop-blur-md z-30 flex flex-col items-center justify-center p-6 text-center select-none">
           <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4 shadow-lg shadow-amber-950/30">
