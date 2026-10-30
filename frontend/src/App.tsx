@@ -7,7 +7,7 @@ import { StudioView } from './components/studio/StudioView';
 import { ArenaView } from './components/arena/ArenaView';
 import { XRayDrawer } from './components/inspector/XRayDrawer';
 import { TortureModal } from './components/arena/TortureModal';
-import { S3ManagerModal } from './components/s3/S3ManagerModal';
+import { S3ExplorerView } from './components/s3/S3ExplorerView';
 
 import {
   DatasetSummary,
@@ -31,7 +31,7 @@ import {
 } from './services/api';
 
 export const App: React.FC = () => {
-  const [mode, setMode] = useState<'studio' | 'arena'>('studio');
+  const [mode, setMode] = useState<'studio' | 'arena' | 's3'>('studio');
   const [activeEngine, setActiveEngine] = useState<EngineType>('duckdb');
   const [serverRssMb, setServerRssMb] = useState<number>(120);
 
@@ -276,14 +276,25 @@ export const App: React.FC = () => {
               onUploadFile={handleUploadFile}
               onDeleteDataset={handleDeleteDataset}
               onToggleCollapse={() => setSidebarOpen(false)}
-              onOpenS3Modal={() => setS3ModalOpen(true)}
+              onOpenS3Modal={() => setMode('s3')}
             />
           </div>
         </div>
 
         {/* Center Analytical Stage */}
         <main className="flex-1 flex flex-col min-h-0 min-w-0">
-          {activeDatasetId && weather ? (
+          {mode === 's3' ? (
+            <S3ExplorerView
+              onDatasetRegistered={async (newWeather) => {
+                const dList = await fetchDatasets();
+                setDatasets(dList);
+                setActiveDatasetId(newWeather.dataset_id);
+                setWeather(newWeather);
+                setMode('studio');
+              }}
+              onNavigateToStudio={() => setMode('studio')}
+            />
+          ) : activeDatasetId && weather ? (
             mode === 'studio' ? (
               <StudioView
                 datasetId={activeDatasetId}
@@ -312,11 +323,11 @@ export const App: React.FC = () => {
                   <span>Upload Parquet / CSV / Excel</span>
                 </button>
                 <button
-                  onClick={() => setS3ModalOpen(true)}
+                  onClick={() => setMode('s3')}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-all hover:scale-105"
                 >
                   <Cloud className="w-4 h-4 text-amber-400" />
-                  <span>Connect S3 Bucket</span>
+                  <span>Browse S3 Storage</span>
                 </button>
                 <button
                   onClick={handleScanFolder}
@@ -330,14 +341,16 @@ export const App: React.FC = () => {
           )}
 
           {/* Bottom Collapsible X-Ray Drawer */}
-          <XRayDrawer
-            open={xrayOpen}
-            onClose={() => setXrayOpen(false)}
-            queryString={queryString}
-            planString={planString}
-            engine={activeEngine}
-            waterfall={waterfall}
-          />
+          {mode !== 's3' && (
+            <XRayDrawer
+              open={xrayOpen}
+              onClose={() => setXrayOpen(false)}
+              queryString={queryString}
+              planString={planString}
+              engine={activeEngine}
+              waterfall={waterfall}
+            />
+          )}
         </main>
       </div>
 
@@ -359,18 +372,6 @@ export const App: React.FC = () => {
           datasetId={activeDatasetId}
         />
       )}
-
-      {/* S3 Lakehouse & Multi-Bucket Manager Modal */}
-      <S3ManagerModal
-        isOpen={s3ModalOpen}
-        onClose={() => setS3ModalOpen(false)}
-        onDatasetRegistered={async (newWeather) => {
-          const dList = await fetchDatasets();
-          setDatasets(dList);
-          setActiveDatasetId(newWeather.dataset_id);
-          setWeather(newWeather);
-        }}
-      />
     </div>
   );
 };

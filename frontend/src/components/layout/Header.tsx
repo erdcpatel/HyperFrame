@@ -8,13 +8,14 @@ import {
   Database,
   Activity,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Cloud
 } from 'lucide-react';
 import { EngineType } from '../../types';
 
 interface Props {
-  mode: 'studio' | 'arena';
-  setMode: (m: 'studio' | 'arena') => void;
+  mode: 'studio' | 'arena' | 's3';
+  setMode: (m: 'studio' | 'arena' | 's3') => void;
   activeEngine: EngineType;
   onEngineChange: (engine: EngineType) => void;
   serverRssMb: number;
@@ -93,6 +94,17 @@ export const Header: React.FC<Props> = ({
         >
           <Swords className="w-3.5 h-3.5" />
           <span>Arena Race Mode</span>
+        </button>
+        <button
+          onClick={() => setMode('s3')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+            mode === 's3'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Cloud className="w-3.5 h-3.5" />
+          <span>S3</span>
         </button>
       </div>
 
