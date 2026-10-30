@@ -167,6 +167,7 @@ export interface S3ProfilePublic {
   region: string;
   access_key_masked: string;
   endpoint_url?: string;
+  use_ssl?: boolean;
   created_at: string;
   status?: string;
   latency_ms?: number;

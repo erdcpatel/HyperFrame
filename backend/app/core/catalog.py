@@ -191,9 +191,13 @@ class DatasetCatalog:
                     if prof:
                         con.execute("INSTALL httpfs; LOAD httpfs;")
                         con.execute(f"SET s3_region = '{prof.region}';")
-                        if prof.access_key_id and prof.secret_access_key:
+                        if prof.access_key_id and prof.secret_access_key and prof.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
                             con.execute(f"SET s3_access_key_id = '{prof.access_key_id}';")
                             con.execute(f"SET s3_secret_access_key = '{prof.secret_access_key}';")
+                        if not prof.use_ssl:
+                            con.execute("SET s3_use_ssl = false;")
+                        else:
+                            con.execute("SET s3_use_ssl = true;")
                         if prof.endpoint_url:
                             con.execute(f"SET s3_endpoint = '{prof.endpoint_url}';")
                             con.execute("SET s3_url_style = 'path';")
@@ -261,8 +265,13 @@ class DatasetCatalog:
         try:
             con.execute("INSTALL httpfs; LOAD httpfs;")
             con.execute(f"SET s3_region = '{profile.region}';")
-            con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
-            con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+            if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+                con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
+                con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+            if not profile.use_ssl:
+                con.execute("SET s3_use_ssl = false;")
+            else:
+                con.execute("SET s3_use_ssl = true;")
             if profile.endpoint_url:
                 con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
                 con.execute("SET s3_url_style = 'path';")

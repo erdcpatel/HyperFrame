@@ -144,3 +144,25 @@ def test_s3_api_endpoints():
     # 2. Browse with non-existent profile returns 404
     resp_browse = client.get("/api/s3/browse?profile_id=non_existent_profile")
     assert resp_browse.status_code == 404
+
+def test_s3_use_ssl_false(tmp_path):
+    storage = tmp_path / "test_ssl.json"
+    mgr = S3ProfilesManager(storage_path=storage)
+    profile = S3BucketProfile(
+        id="minio_local",
+        name="Local MinIO Insecure",
+        bucket="test-minio",
+        region="us-east-1",
+        access_key_id="minioadmin",
+        secret_access_key="minioadmin",
+        endpoint_url="http://localhost:9000",
+        use_ssl=False
+    )
+    saved = mgr.save_profile(profile)
+    assert saved.use_ssl is False
+    
+    with patch("backend.app.core.s3_manager.boto3.client") as mock_boto:
+        mock_boto.return_value = MagicMock()
+        mgr.get_boto_client(profile)
+        call_kwargs = mock_boto.call_args[1]
+        assert call_kwargs["use_ssl"] is False

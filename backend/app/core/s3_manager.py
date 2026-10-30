@@ -30,6 +30,7 @@ class S3ProfilePublic(BaseModel):
     region: str
     access_key_masked: str
     endpoint_url: Optional[str] = None
+    use_ssl: bool = True
     created_at: str
     status: Optional[str] = "configured"  # "connected" | "error" | "configured"
     latency_ms: Optional[float] = None
@@ -94,6 +95,7 @@ class S3ProfilesManager:
                 region=p.get("region", "us-east-1"),
                 access_key_masked=mask_key(p.get("access_key_id", "")),
                 endpoint_url=p.get("endpoint_url"),
+                use_ssl=p.get("use_ssl", True),
                 created_at=p.get("created_at", "")
             ))
         return res
@@ -116,6 +118,7 @@ class S3ProfilesManager:
             region=profile.region,
             access_key_masked=mask_key(profile.access_key_id),
             endpoint_url=profile.endpoint_url,
+            use_ssl=profile.use_ssl,
             created_at=profile.created_at,
             status="configured"
         )

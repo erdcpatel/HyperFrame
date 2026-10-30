@@ -42,6 +42,9 @@ class PolarsEngine(BaseEngine):
                     if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
                         storage_options["aws_access_key_id"] = profile.access_key_id
                         storage_options["aws_secret_access_key"] = profile.secret_access_key
+                    if not profile.use_ssl:
+                        storage_options["aws_use_ssl"] = "false"
+                        storage_options["aws_allow_http"] = "true"
                     if profile.endpoint_url:
                         storage_options["aws_endpoint"] = profile.endpoint_url
             return pl.scan_parquet(file_path, storage_options=storage_options)

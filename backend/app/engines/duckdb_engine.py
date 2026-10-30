@@ -53,8 +53,13 @@ class DuckDBEngine(BaseEngine):
                 profile = s3_manager.get_profile(profile_id)
                 if profile:
                     self._con.execute(f"SET s3_region = '{profile.region}';")
-                    self._con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
-                    self._con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+                    if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+                        self._con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
+                        self._con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+                    if not profile.use_ssl:
+                        self._con.execute("SET s3_use_ssl = false;")
+                    else:
+                        self._con.execute("SET s3_use_ssl = true;")
                     if profile.endpoint_url:
                         self._con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
                         self._con.execute("SET s3_url_style = 'path';")

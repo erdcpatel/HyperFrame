@@ -66,6 +66,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [endpointUrl, setEndpointUrl] = useState('');
+  const [useSsl, setUseSsl] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -135,7 +136,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
         access_key_id: accessKey.trim(),
         secret_access_key: secretKey.trim(),
         endpoint_url: endpointUrl.trim() || undefined,
-        use_ssl: true,
+        use_ssl: useSsl,
       });
 
       setIsAddingProfile(false);
@@ -144,6 +145,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
       setAccessKey('');
       setSecretKey('');
       setEndpointUrl('');
+      setUseSsl(true);
       await loadProfiles();
       setSelectedProfileId(id);
     } catch (err: any) {
@@ -417,9 +419,17 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       <label className="text-slate-400 font-semibold block mb-1">Custom Endpoint URL (Optional)</label>
                       <input
                         type="text"
-                        placeholder="e.g. s3.wasabisys.com or MinIO host"
+                        placeholder="e.g. localhost:9000, http://minio:9000"
                         value={endpointUrl}
-                        onChange={(e) => setEndpointUrl(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEndpointUrl(val);
+                          if (val.startsWith('http://')) {
+                            setUseSsl(false);
+                          } else if (val.startsWith('https://')) {
+                            setUseSsl(true);
+                          }
+                        }}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
@@ -427,7 +437,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       <label className="text-slate-400 font-semibold block mb-1">AWS Access Key ID *</label>
                       <input
                         type="text"
-                        placeholder="AKIA..."
+                        placeholder="AKIA... (or leave blank for IAM Role)"
                         value={accessKey}
                         onChange={(e) => setAccessKey(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
@@ -437,11 +447,37 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       <label className="text-slate-400 font-semibold block mb-1">AWS Secret Access Key *</label>
                       <input
                         type="password"
-                        placeholder="Secret key..."
+                        placeholder="Secret key... (or leave blank for IAM Role)"
                         value={secretKey}
                         onChange={(e) => setSecretKey(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
+                    </div>
+
+                    {/* SSL / HTTPS Toggle */}
+                    <div className="col-span-2 flex items-center justify-between p-3 rounded-lg bg-[#0b101f] border border-[#24324f]">
+                      <div className="flex flex-col">
+                        <span className="text-slate-200 font-semibold text-xs flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                          SSL / HTTPS Encryption
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-sans">
+                          Mark <b>False (Insecure HTTP)</b> for local MinIO / Ceph endpoints running on plain HTTP (e.g. <code className="text-amber-400">http://localhost:9000</code>).
+                        </span>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={useSsl}
+                          onChange={(e) => setUseSsl(e.target.checked)}
+                          className="w-4 h-4 rounded bg-[#162035] border-[#24324f] text-blue-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span className={`text-xs font-mono font-semibold px-2 py-0.5 rounded border ${
+                          useSsl ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {useSsl ? 'SSL: True (HTTPS)' : 'SSL: False (HTTP)'}
+                        </span>
+                      </label>
                     </div>
                   </div>
 
@@ -480,6 +516,15 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                             s3://{p.bucket}
                           </span>
                           <span className="text-[10px] font-mono text-slate-400">({p.region})</span>
+                          {p.use_ssl === false ? (
+                            <span className="text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-semibold">
+                              HTTP (SSL False)
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-semibold">
+                              HTTPS
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono mt-1">
                           <span>Key: {p.access_key_masked}</span>
