@@ -21,6 +21,7 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
   const [engineB, setEngineB] = useState<EngineType>('polars');
 
   const [workloadType, setWorkloadType] = useState<'sort' | 'filter' | 'pivot'>('sort');
+  const [raceMode, setRaceMode] = useState<'isolated' | 'concurrent'>('isolated');
 
   const [waterfallA, setWaterfallA] = useState<QueryWaterfall | null>(null);
   const [waterfallB, setWaterfallB] = useState<QueryWaterfall | null>(null);
@@ -70,19 +71,31 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
     }
 
     try {
-      // Fire simultaneously
       const qA: HyperQuery = { dataset: datasetId, engine: engineA, ...baseQuery };
       const qB: HyperQuery = { dataset: datasetId, engine: engineB, ...baseQuery };
 
-      const [resA, resB] = await Promise.all([runQuery(qA), runQuery(qB)]);
+      if (raceMode === 'isolated') {
+        // Scientific isolated execution: Engine A runs alone with 100% of CPU cores, then Engine B
+        const resA = await runQuery(qA);
+        setWaterfallA(resA.waterfall);
+        setQueryStrA(resA.query_string);
+        setRowsA(resA.returned_rows);
 
-      setWaterfallA(resA.waterfall);
-      setQueryStrA(resA.query_string);
-      setRowsA(resA.returned_rows);
+        const resB = await runQuery(qB);
+        setWaterfallB(resB.waterfall);
+        setQueryStrB(resB.query_string);
+        setRowsB(resB.returned_rows);
+      } else {
+        // Simultaneous drag-race: fire both engines at the exact same millisecond
+        const [resA, resB] = await Promise.all([runQuery(qA), runQuery(qB)]);
+        setWaterfallA(resA.waterfall);
+        setQueryStrA(resA.query_string);
+        setRowsA(resA.returned_rows);
 
-      setWaterfallB(resB.waterfall);
-      setQueryStrB(resB.query_string);
-      setRowsB(resB.returned_rows);
+        setWaterfallB(resB.waterfall);
+        setQueryStrB(resB.query_string);
+        setRowsB(resB.returned_rows);
+      }
     } catch (err) {
       console.error('Race error:', err);
     } finally {
@@ -127,6 +140,18 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
               <option value="pivot">Group-By Pivot & Aggregation</option>
             </select>
           </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-semibold">Mode:</span>
+            <select
+              value={raceMode}
+              onChange={(e) => setRaceMode(e.target.value as any)}
+              className="bg-[#141b2c] border border-[#24324f] rounded px-2.5 py-1 text-slate-200 outline-none cursor-pointer"
+            >
+              <option value="isolated">Isolated / Sequential (Scientific & Accurate)</option>
+              <option value="concurrent">Concurrent / Simultaneous (Head-to-Head Drag Race)</option>
+            </select>
+          </div>
         </div>
 
         <button
@@ -135,7 +160,7 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-900/30 transition-all active:scale-95 disabled:opacity-50"
         >
           <Play className={`w-4 h-4 fill-white ${racing ? 'animate-spin' : ''}`} />
-          <span>{racing ? 'Running Race...' : 'FIRE SYNCHRONIZED RACE'}</span>
+          <span>{racing ? 'Running Race...' : raceMode === 'isolated' ? 'RUN ISOLATED BENCHMARK' : 'FIRE SYNCHRONIZED RACE'}</span>
         </button>
       </div>
 
@@ -148,7 +173,9 @@ export const ArenaView: React.FC<Props> = ({ datasetId, columns }) => {
             <span className="font-bold text-emerald-400 uppercase text-sm">{winner.engine}</span>
             <span className="text-slate-400">({winner.pct}% faster execution)</span>
           </div>
-          <span className="text-slate-500 text-[11px]">Synchronized Workload Completed</span>
+          <span className="text-slate-500 text-[11px]">
+            {raceMode === 'isolated' ? 'Isolated (Scientific Benchmark) Completed' : 'Concurrent Stress Race Completed'}
+          </span>
         </div>
       )}
 
