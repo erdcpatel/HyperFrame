@@ -6,6 +6,7 @@ from backend.app.engines.duckdb_engine import DuckDBEngine
 from backend.app.engines.polars_engine import PolarsEngine
 from backend.app.engines.perspective_engine import PerspectiveEngine
 from backend.app.core.telemetry import telemetry_monitor
+from backend.app.config import settings
 
 logger = logging.getLogger("hyperframe.lifecycle")
 
@@ -16,7 +17,8 @@ class EngineLifecycleManager:
             "polars": PolarsEngine(),
             "perspective": PerspectiveEngine()
         }
-        self._active_engine_name: str = "duckdb"
+        initial_engine = getattr(settings, "DEFAULT_ENGINE", "duckdb").lower().strip()
+        self._active_engine_name: str = initial_engine if initial_engine in self._engines else "duckdb"
         self._active_dataset_id: Optional[str] = None
 
     @property

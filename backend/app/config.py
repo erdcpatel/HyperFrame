@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     
+    # Default Query Engine ("duckdb" | "polars" | "perspective")
+    DEFAULT_ENGINE: str = "duckdb"
+    
     # Workstation Resource Allocations
     DUCKDB_THREADS: int = 8
     DUCKDB_MEMORY_LIMIT: str = "8GB"

@@ -32,7 +32,8 @@ import {
 
 export const App: React.FC = () => {
   const [mode, setMode] = useState<'studio' | 'arena' | 's3'>('studio');
-  const [activeEngine, setActiveEngine] = useState<EngineType>('duckdb');
+  const savedEngine = (typeof window !== 'undefined' ? localStorage.getItem('hyperframe_active_engine') : null) as EngineType | null;
+  const [activeEngine, setActiveEngine] = useState<EngineType>(savedEngine || 'duckdb');
   const [serverRssMb, setServerRssMb] = useState<number>(120);
 
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
@@ -87,7 +88,15 @@ export const App: React.FC = () => {
       }
 
       const engStatus = await fetchEnginesStatus();
-      setActiveEngine(engStatus.active_engine);
+      const userSavedEngine = localStorage.getItem('hyperframe_active_engine') as EngineType | null;
+      if (userSavedEngine && ['duckdb', 'polars', 'perspective'].includes(userSavedEngine)) {
+        setActiveEngine(userSavedEngine);
+        if (engStatus.active_engine !== userSavedEngine) {
+          await activateEngine(userSavedEngine);
+        }
+      } else {
+        setActiveEngine(engStatus.active_engine);
+      }
       setServerRssMb(engStatus.server_rss_mb);
     } catch (err) {
       console.error('Error loading initial data:', err);
@@ -147,6 +156,7 @@ export const App: React.FC = () => {
     try {
       await activateEngine(engine, activeDatasetId || undefined);
       setActiveEngine(engine);
+      localStorage.setItem('hyperframe_active_engine', engine);
     } catch (err) {
       console.error('Engine switch failed:', err);
     }
