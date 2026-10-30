@@ -24,6 +24,7 @@ export const StudioView: React.FC<Props> = React.memo(({
   const [filters, setFilters] = useState<HyperFilter[]>([]);
   const [quickSearch, setQuickSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'pivot' | 'sql'>('grid');
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const handleAddFilter = (f: HyperFilter) => {
     setFilters([...filters, f]);
@@ -38,17 +39,24 @@ export const StudioView: React.FC<Props> = React.memo(({
   };
 
   const handleExportCsv = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    onLoadingChange?.(true, `Exporting CSV (${engine.toUpperCase()})...`);
     try {
       const q: HyperQuery = {
         dataset: datasetId,
         engine,
         filters,
         quick_search: quickSearch.trim() || undefined,
-        limit: 50000,
+        limit: 100000,
       };
       await exportQueryCsv(q);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Export failed:', err);
+      alert(`Export failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+      onLoadingChange?.(false);
     }
   };
 
@@ -66,6 +74,7 @@ export const StudioView: React.FC<Props> = React.memo(({
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onExportCsv={handleExportCsv}
+        isExporting={isExporting}
       />
 
       {/* Main Analytical Stage */}

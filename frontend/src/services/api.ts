@@ -105,7 +105,14 @@ export async function exportQueryCsv(query: HyperQuery): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(query),
   });
-  if (!res.ok) throw new Error('Export failed');
+  if (!res.ok) {
+    let detail = 'Export failed';
+    try {
+      const errJson = await res.json();
+      detail = errJson.detail || detail;
+    } catch (_) {}
+    throw new Error(detail);
+  }
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');

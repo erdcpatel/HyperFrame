@@ -7,7 +7,8 @@ import {
   Grid,
   BarChart3,
   Code2,
-  Download
+  Download,
+  RotateCw
 } from 'lucide-react';
 import { ColumnWeather, HyperFilter, FilterOperator } from '../../types';
 
@@ -22,6 +23,7 @@ interface Props {
   viewMode: 'grid' | 'pivot' | 'sql';
   onViewModeChange: (mode: 'grid' | 'pivot' | 'sql') => void;
   onExportCsv?: () => void;
+  isExporting?: boolean;
 }
 
 export const FilterBar: React.FC<Props> = ({
@@ -35,6 +37,7 @@ export const FilterBar: React.FC<Props> = ({
   viewMode,
   onViewModeChange,
   onExportCsv,
+  isExporting = false,
 }) => {
   const [selectedCol, setSelectedCol] = useState(columns[0]?.name || '');
   const [operator, setOperator] = useState<FilterOperator>('equals');
@@ -174,11 +177,20 @@ export const FilterBar: React.FC<Props> = ({
           {onExportCsv && (
             <button
               onClick={onExportCsv}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 text-xs font-medium border border-[#24324f] transition-colors"
-              title="Export filtered dataset to CSV"
+              disabled={isExporting}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold border transition-all ${
+                isExporting
+                  ? 'bg-blue-600/25 border-blue-500/50 text-blue-300 cursor-wait shadow-sm shadow-blue-500/20'
+                  : 'bg-[#162035] hover:bg-[#1f2c4a] text-slate-200 border-[#24324f] hover:border-blue-500/40 active:scale-95'
+              }`}
+              title={isExporting ? 'Generating and downloading CSV...' : 'Export current filtered data to CSV'}
             >
-              <Download className="w-3.5 h-3.5 text-blue-400" />
-              <span>Export</span>
+              {isExporting ? (
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-blue-400" />
+              )}
+              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
             </button>
           )}
         </div>
