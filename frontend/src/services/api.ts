@@ -100,27 +100,42 @@ export async function queryAgGrid(params: {
 }
 
 export async function exportQueryCsv(query: HyperQuery): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/query/export`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(query),
-  });
-  if (!res.ok) {
-    let detail = 'Export failed';
-    try {
-      const errJson = await res.json();
-      detail = errJson.detail || detail;
-    } catch (_) {}
-    throw new Error(detail);
+  const controller = new AbortController();
+  // 3-minute safety timeout to prevent hanging UI
+  const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/query/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(query),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = 'Export failed';
+      try {
+        const errJson = await res.json();
+        detail = errJson.detail || detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hyperframe_${query.dataset}_export.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error('Export request timed out after 3 minutes. Please retry.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `hyperframe_${query.dataset}_export.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
 
 export async function explainQuery(query: HyperQuery): Promise<{ dataset: string; engine: string; plan: string }> {

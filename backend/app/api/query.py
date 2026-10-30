@@ -170,10 +170,14 @@ def export_query_csv(query: HyperQuery):
     Polars sink_csv, or PyArrow batched streaming writer.
     Supports multi-GB uncompressed files, large_string, string_view, and out-of-core streaming.
     """
+    import time
+    t_start = time.time()
     file_path = catalog.get_dataset_path(query.dataset)
     if not file_path:
+        logger.error(f"Export rejected: Dataset '{query.dataset}' not registered.")
         raise HTTPException(status_code=404, detail=f"Dataset '{query.dataset}' not registered.")
 
+    logger.info(f"==> Exporting CSV: dataset='{query.dataset}', engine='{query.engine}', filters={len(query.filters)}, limit={query.limit}")
     unique_id = uuid.uuid4().hex[:8]
     tmp_export = Path(tempfile.gettempdir()) / f"hyperframe_{query.dataset}_{unique_id}.csv"
     engine = lifecycle_manager.get_engine(query.engine)
@@ -185,6 +189,10 @@ def export_query_csv(query: HyperQuery):
 
     try:
         engine.export_csv(export_q, file_path, str(tmp_export))
+        file_size = tmp_export.stat().st_size if tmp_export.exists() else 0
+        from backend.app.utils.serialization import format_bytes
+        dur_ms = (time.time() - t_start) * 1000
+        logger.info(f"<== CSV generated successfully: {format_bytes(file_size)} in {dur_ms:.1f}ms -> Streaming to browser...")
 
         def cleanup_temp_file():
             try:
