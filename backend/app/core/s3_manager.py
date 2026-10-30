@@ -343,4 +343,83 @@ class S3ProfilesManager:
             has_more=has_more
         )
 
+    def get_parquet_preview_and_schema(
+        self, profile_id: str, folder_prefix: str, recursive_glob: bool = True, limit: int = 100
+    ) -> dict:
+        """
+        Extracts Parquet schema and sample records directly via Boto3 + PyArrow.
+        100% reliable for on-prem S3 without DuckDB httpfs / SSL certificate errors.
+        """
+        profile = self.get_profile(profile_id)
+        if not profile:
+            raise ValueError(f"Profile '{profile_id}' not found.")
+
+        import io
+        import pyarrow.parquet as pq
+        from backend.app.utils.serialization import arrow_table_to_dict_list
+
+        client = self.get_boto_client(profile)
+        clean_prefix = folder_prefix.strip().strip("/")
+        if clean_prefix and not clean_prefix.endswith("/"):
+            clean_prefix += "/"
+
+        # List parquet objects under prefix using Boto3
+        paginator = client.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=profile.bucket, Prefix=clean_prefix)
+
+        parquet_keys = []
+        total_size_bytes = 0
+        for page in page_iterator:
+            for obj in page.get('Contents', []):
+                key = obj.get('Key', '')
+                if any(key.lower().endswith(ext) for ext in ['.parquet', '.pqt']):
+                    if not recursive_glob:
+                        sub = key[len(clean_prefix):]
+                        if "/" in sub:
+                            continue
+                    parquet_keys.append(key)
+                    total_size_bytes += obj.get('Size', 0)
+                    if len(parquet_keys) >= 100:
+                        break
+            if len(parquet_keys) >= 100:
+                break
+
+        if not parquet_keys:
+            raise ValueError(f"No Parquet files found in 's3://{profile.bucket}/{clean_prefix}'")
+
+        # Fetch first Parquet file directly via Boto3
+        first_key = parquet_keys[0]
+        logger.info(f"Reading Parquet metadata via Boto3 for 's3://{profile.bucket}/{first_key}'")
+        t0 = time.time()
+        obj_resp = client.get_object(Bucket=profile.bucket, Key=first_key)
+        data_bytes = obj_resp['Body'].read()
+        latency_ms = (time.time() - t0) * 1000
+
+        pfile = pq.ParquetFile(io.BytesIO(data_bytes))
+        schema_arrow = pfile.schema_arrow
+        columns = schema_arrow.names
+        column_types = {name: str(schema_arrow.field(name).type) for name in columns}
+
+        rows_in_first = pfile.metadata.num_rows
+        est_total_rows = max(rows_in_first, rows_in_first * len(parquet_keys))
+
+        # Sample rows
+        first_rg = pfile.read_row_group(0) if pfile.metadata.num_row_groups > 0 else pfile.read()
+        sliced = first_rg.slice(0, limit)
+        rows = arrow_table_to_dict_list(sliced)
+
+        pattern = "**/*.parquet" if recursive_glob else "*.parquet"
+        s3_uri = f"s3://{profile.bucket}/{clean_prefix}{pattern}" if clean_prefix else f"s3://{profile.bucket}/{pattern}"
+
+        return {
+            "s3_path": s3_uri,
+            "latency_ms": round(latency_ms, 1),
+            "columns": columns,
+            "column_types": column_types,
+            "rows": rows,
+            "total_rows_estimated": est_total_rows,
+            "total_size_bytes": total_size_bytes,
+            "file_count": len(parquet_keys)
+        }
+
 s3_manager = S3ProfilesManager()

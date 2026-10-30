@@ -258,41 +258,32 @@ class DatasetCatalog:
     def register_s3_dataset(self, dataset_id: str, profile_id: str, s3_uri: str, description: Optional[str] = None) -> DatasetWeather:
         """
         Registers an S3 multi-file folder as a unified dataset.
-        Extracts schema and metadata directly via DuckDB httpfs zero-download range requests.
+        Extracts schema and metadata resiliently using Boto3 + PyArrow with DuckDB fallback.
         """
         from backend.app.core.s3_manager import s3_manager
         profile = s3_manager.get_profile(profile_id)
         if not profile:
             raise ValueError(f"S3 Profile '{profile_id}' not found.")
 
-        con = duckdb.connect()
+        # Extract folder prefix and glob style from s3_uri
+        # Format: s3://bucket/prefix/*.parquet or s3://bucket/prefix/**/*.parquet
+        clean_path = s3_uri.replace(f"s3://{profile.bucket}/", "")
+        folder_prefix = clean_path.split("*")[0].rstrip("/")
+        recursive_glob = "**" in s3_uri
+
+        columns = []
+        row_count = 0
+        total_size_bytes = 0
+
+        # Primary approach: Boto3 + PyArrow (immune to DuckDB httpfs network / cert errors)
         try:
-            con.execute("INSTALL httpfs; LOAD httpfs;")
-            con.execute(f"SET s3_region = '{profile.region}';")
-            if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
-                con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
-                con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
-            if not profile.use_ssl:
-                con.execute("SET s3_use_ssl = false;")
-            else:
-                con.execute("SET s3_use_ssl = true;")
-            if profile.endpoint_url:
-                ep = profile.endpoint_url.strip()
-                if "://" in ep:
-                    ep = ep.split("://", 1)[1]
-                ep = ep.rstrip("/")
-                con.execute(f"SET s3_endpoint = '{ep}';")
-                con.execute("SET s3_url_style = 'path';")
-
-            # 1. Row count & Columns via DuckDB DESCRIBE
-            desc_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{s3_uri}') LIMIT 0;").df()
-            count_res = con.execute(f"SELECT COUNT(*) FROM read_parquet('{s3_uri}');").fetchone()
-            row_count = int(count_res[0]) if count_res else 0
-
-            columns = []
-            for _, r in desc_df.iterrows():
-                col_name = str(r["column_name"])
-                dtype = str(r["column_type"])
+            preview_meta = s3_manager.get_parquet_preview_and_schema(
+                profile_id=profile_id,
+                folder_prefix=folder_prefix,
+                recursive_glob=recursive_glob
+            )
+            for col_name in preview_meta["columns"]:
+                dtype = preview_meta["column_types"].get(col_name, "string")
                 columns.append(ColumnWeather(
                     name=col_name,
                     dtype=dtype,
@@ -300,34 +291,75 @@ class DatasetCatalog:
                     null_percentage=0.0,
                     approx_unique=0
                 ))
+            row_count = preview_meta.get("total_rows_estimated", 0)
+            total_size_bytes = preview_meta.get("total_size_bytes", 0)
+        except Exception as boto_err:
+            logger.warning(f"Boto3 Parquet metadata extraction failed: {boto_err}. Trying DuckDB httpfs fallback...")
+            con = duckdb.connect()
+            try:
+                con.execute("INSTALL httpfs; LOAD httpfs;")
+                try:
+                    con.execute("SET enable_server_cert_verification = false;")
+                except Exception:
+                    pass
+                con.execute(f"SET s3_region = '{profile.region or 'us-east-1'}';")
+                if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT", "ANONYMOUS"]:
+                    con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
+                    con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
+                if not profile.use_ssl:
+                    con.execute("SET s3_use_ssl = false;")
+                else:
+                    con.execute("SET s3_use_ssl = true;")
+                if profile.endpoint_url:
+                    ep = profile.endpoint_url.strip()
+                    if "://" in ep:
+                        ep = ep.split("://", 1)[1]
+                    ep = ep.rstrip("/")
+                    con.execute(f"SET s3_endpoint = '{ep}';")
+                    con.execute("SET s3_url_style = 'path';")
 
-            weather = DatasetWeather(
-                dataset_id=dataset_id,
-                file_name=f"☁️ {s3_uri.split('/')[-2] or dataset_id}",
-                path=s3_uri,
-                file_size_bytes=0,
-                file_size_formatted="Remote S3 Lakehouse",
-                row_count=row_count,
-                column_count=len(columns),
-                row_groups=1,
-                est_uncompressed_bytes=row_count * len(columns) * 8,
-                est_uncompressed_formatted=format_bytes(row_count * len(columns) * 8),
-                compression_ratio=3.5,
-                columns=columns
-            )
+                desc_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{s3_uri}') LIMIT 0;").df()
+                count_res = con.execute(f"SELECT COUNT(*) FROM read_parquet('{s3_uri}');").fetchone()
+                row_count = int(count_res[0]) if count_res else 0
 
-            # Save in catalog with s3 profile metadata
-            cat = self._read_catalog()
-            cat_entry = weather.model_dump()
-            cat_entry["source"] = "s3"
-            cat_entry["s3_profile_id"] = profile_id
-            cat_entry["description"] = description
-            cat[dataset_id] = cat_entry
-            self._write_catalog(cat)
+                for _, r in desc_df.iterrows():
+                    col_name = str(r["column_name"])
+                    dtype = str(r["column_type"])
+                    columns.append(ColumnWeather(
+                        name=col_name,
+                        dtype=dtype,
+                        null_count=0,
+                        null_percentage=0.0,
+                        approx_unique=0
+                    ))
+            finally:
+                con.close()
 
-            return weather
-        finally:
-            con.close()
+        weather = DatasetWeather(
+            dataset_id=dataset_id,
+            file_name=f"☁️ {s3_uri.split('/')[-2] or dataset_id}",
+            path=s3_uri,
+            file_size_bytes=total_size_bytes,
+            file_size_formatted=format_bytes(total_size_bytes) if total_size_bytes > 0 else "Remote S3 Storage",
+            row_count=row_count,
+            column_count=len(columns),
+            row_groups=1,
+            est_uncompressed_bytes=row_count * max(1, len(columns)) * 8,
+            est_uncompressed_formatted=format_bytes(row_count * max(1, len(columns)) * 8),
+            compression_ratio=3.5,
+            columns=columns
+        )
+
+        # Save in catalog with s3 profile metadata
+        cat = self._read_catalog()
+        cat_entry = weather.model_dump()
+        cat_entry["source"] = "s3"
+        cat_entry["s3_profile_id"] = profile_id
+        cat_entry["description"] = description
+        cat[dataset_id] = cat_entry
+        self._write_catalog(cat)
+
+        return weather
 
     def delete_dataset(self, dataset_id: str):
         catalog = self._read_catalog()

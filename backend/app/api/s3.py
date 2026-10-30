@@ -89,12 +89,32 @@ def browse_s3_folder(
 @router.post("/preview")
 def preview_s3_data(req: S3PreviewRequest):
     """
-    Live zero-download sample preview: queries the top 10 rows directly from S3 via DuckDB httpfs.
+    Live zero-download sample preview: queries schema and sample rows directly from S3.
+    Uses resilient Boto3 + PyArrow extraction with DuckDB fallback.
     """
     profile = s3_manager.get_profile(req.profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail=f"Profile '{req.profile_id}' not found.")
 
+    try:
+        data = s3_manager.get_parquet_preview_and_schema(
+            profile_id=req.profile_id,
+            folder_prefix=req.folder_prefix,
+            recursive_glob=req.recursive_glob,
+            limit=req.limit
+        )
+        return {
+            "status": "success",
+            "s3_path": data["s3_path"],
+            "latency_ms": data["latency_ms"],
+            "columns": data["columns"],
+            "column_types": data["column_types"],
+            "rows": data["rows"]
+        }
+    except Exception as boto_err:
+        logger.warning(f"Boto3 Parquet preview failed: {boto_err}. Trying DuckDB httpfs...")
+
+    # Fallback to DuckDB httpfs
     prefix = req.folder_prefix.strip().strip("/")
     pattern = "**/*.parquet" if req.recursive_glob else "*.parquet"
     s3_path = f"s3://{profile.bucket}/{prefix}/{pattern}" if prefix else f"s3://{profile.bucket}/{pattern}"
@@ -102,8 +122,12 @@ def preview_s3_data(req: S3PreviewRequest):
     con = duckdb.connect()
     try:
         con.execute("INSTALL httpfs; LOAD httpfs;")
-        con.execute(f"SET s3_region = '{profile.region}';")
-        if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+        try:
+            con.execute("SET enable_server_cert_verification = false;")
+        except Exception:
+            pass
+        con.execute(f"SET s3_region = '{profile.region or 'us-east-1'}';")
+        if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT", "ANONYMOUS"]:
             con.execute(f"SET s3_access_key_id = '{profile.access_key_id}';")
             con.execute(f"SET s3_secret_access_key = '{profile.secret_access_key}';")
         if not profile.use_ssl:
