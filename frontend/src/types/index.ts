@@ -192,4 +192,5 @@ export interface S3BrowseResponse {
   total_bytes_in_folder: number;
   total_bytes_formatted: string;
   is_partitioned: boolean;
+  has_more?: boolean;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
-import { Play, FileCode, AlertCircle, Columns, Sparkles, Command } from 'lucide-react';
+import { Play, FileCode, AlertCircle, Columns, Sparkles, Command, RotateCw } from 'lucide-react';
 import { ColumnWeather, EngineType, HyperQuery, QueryWaterfall } from '../../types';
 import { runQuery } from '../../services/api';
 
@@ -60,6 +60,21 @@ LIMIT 50;`;
   const [resultColumns, setResultColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    let interval: any = null;
+    if (loading) {
+      const start = Date.now();
+      setElapsedMs(0);
+      interval = setInterval(() => {
+        setElapsedMs(Date.now() - start);
+      }, 100);
+    } else {
+      setElapsedMs(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   // Keep a stable ref for handleRun so Monaco command binding doesn't capture stale closures
   const handleRunRef = useRef<() => void>(() => {});
@@ -288,10 +303,19 @@ ORDER BY count DESC;`)
           <button
             onClick={handleRun}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-75 disabled:cursor-wait"
           >
-            <Play className="w-3.5 h-3.5 fill-white" />
-            <span>{loading ? 'Executing...' : 'Run Query'}</span>
+            {loading ? (
+              <>
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>Running ({(elapsedMs / 1000).toFixed(1)}s)...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-white" />
+                <span>Run Query</span>
+              </>
+            )}
           </button>
         </div>
       </div>

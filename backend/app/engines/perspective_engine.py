@@ -44,6 +44,9 @@ class PerspectiveEngine(BaseEngine):
         Loads all columns so the cached table can satisfy all subsequent queries.
         Tracks table instance for explicit deletion on unload.
         """
+        if file_path.startswith("s3://"):
+            return  # Remote S3 datasets are always evaluated via zero-copy hybrid compute-pushdown
+
         if dataset_id in self._active_tables:
             return
 
@@ -88,14 +91,14 @@ class PerspectiveEngine(BaseEngine):
         is requested (or system memory is constrained), uses Smart Compute-Pushdown via DuckDB
         vectorized disk scan, then renders the result through Perspective's C++ view API.
         """
-        posix_p = to_posix_path(file_path)
-        file_size_mb = Path(posix_p).stat().st_size / (1024 * 1024) if Path(posix_p).exists() else 0.0
+        is_s3 = file_path.startswith("s3://")
+        posix_p = file_path if is_s3 else to_posix_path(file_path)
+        file_size_mb = 0.0 if is_s3 else (Path(posix_p).stat().st_size / (1024 * 1024) if Path(posix_p).exists() else 0.0)
         mem = psutil.virtual_memory()
         avail_mb = mem.available / (1024 * 1024)
         estimated_ram_mb = file_size_mb * 7
         max_allowed_mb = MAX_PERSPECTIVE_RAM_GB * 1024
 
-        is_s3 = file_path.startswith("s3://")
         should_pushdown = is_s3 or (
             file_size_mb >= PSP_PUSHDOWN_THRESHOLD_MB and (query.groupBy or query.aggregations)
         ) or (estimated_ram_mb > max_allowed_mb or estimated_ram_mb > (avail_mb + 512))

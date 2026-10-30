@@ -177,11 +177,34 @@ class DatasetCatalog:
     def _compute_duckdb_summarize(self, weather: DatasetWeather) -> DatasetWeather:
         """
         Runs DuckDB SUMMARIZE over the Parquet file to compute instant column stats.
+        Handles both local files and remote S3 datasets with zero-copy range requests and sampling.
         """
         posix_p = weather.path
         con = duckdb.connect()
         try:
-            summary_df = con.execute(f"SUMMARIZE SELECT * FROM read_parquet('{posix_p}')").df()
+            if posix_p.startswith("s3://"):
+                cat = self._read_catalog()
+                profile_id = cat.get(weather.dataset_id, {}).get("s3_profile_id")
+                if profile_id:
+                    from backend.app.core.s3_manager import s3_manager
+                    prof = s3_manager.get_profile(profile_id)
+                    if prof:
+                        con.execute("INSTALL httpfs; LOAD httpfs;")
+                        con.execute(f"SET s3_region = '{prof.region}';")
+                        if prof.access_key_id and prof.secret_access_key:
+                            con.execute(f"SET s3_access_key_id = '{prof.access_key_id}';")
+                            con.execute(f"SET s3_secret_access_key = '{prof.secret_access_key}';")
+                        if prof.endpoint_url:
+                            con.execute(f"SET s3_endpoint = '{prof.endpoint_url}';")
+                            con.execute("SET s3_url_style = 'path';")
+
+                # For remote S3 tables over 100k rows, sample 100,000 to keep weather computation instantaneous
+                if weather.row_count > 100000:
+                    summary_df = con.execute(f"SUMMARIZE SELECT * FROM read_parquet('{posix_p}') USING SAMPLE 100000;").df()
+                else:
+                    summary_df = con.execute(f"SUMMARIZE SELECT * FROM read_parquet('{posix_p}');").df()
+            else:
+                summary_df = con.execute(f"SUMMARIZE SELECT * FROM read_parquet('{posix_p}')").df()
             
             # Mapping columns from DuckDB SUMMARIZE
             # Columns: column_name, column_type, min, max, approx_unique, avg, std, q25, q50, q75, count, null_percentage

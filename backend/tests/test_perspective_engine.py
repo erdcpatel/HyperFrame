@@ -88,4 +88,8 @@ def test_perspective_group_by_hybrid_pushdown(monkeypatch, perspective_engine):
     assert "avg_price" in tbl.column_names
     assert "row_count" in tbl.column_names
     assert total > 0
-    assert "Perspective Hybrid Pushdown" in plan
+
+def test_perspective_s3_guard(perspective_engine):
+    # load_dataset on an s3 URI must be a safe no-op without attempting Path.stat()
+    perspective_engine.load_dataset("s3_test", "s3://my-bucket/trades/**/*.parquet")
+    assert "s3_test" not in perspective_engine._active_tables

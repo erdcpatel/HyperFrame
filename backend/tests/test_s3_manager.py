@@ -11,6 +11,8 @@ client = TestClient(app)
 def test_mask_key():
     assert mask_key("short") == "••••••••"
     assert mask_key("AKIAIOSFODNN7EXAMPLE") == "AKIA••••••••MPLE"
+    assert mask_key("") == "AWS IAM / Default Credential Chain"
+    assert mask_key("IAM_ROLE") == "AWS IAM / Default Credential Chain"
 
 def test_s3_profile_crud(tmp_path):
     storage = tmp_path / "test_s3_profiles.json"

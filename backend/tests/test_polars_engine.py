@@ -88,3 +88,17 @@ def test_polars_multi_column_quick_search(sample_dataset):
     assert total_rows > 0
     desks = table["desk"].to_pylist()
     assert all("APAC" in d for d in desks)
+
+def test_polars_raw_sql_execution(sample_dataset):
+    engine = PolarsEngine()
+    q = HyperQuery(
+        dataset="test_polars_sample",
+        engine="polars",
+        raw_sql="SELECT symbol, COUNT(*) AS cnt, SUM(notional) AS total_val FROM :dataset GROUP BY symbol ORDER BY total_val DESC LIMIT 5",
+        limit=5
+    )
+    table, plan, total_rows = engine.execute_query(q, sample_dataset)
+    assert table.num_rows > 0
+    assert "symbol" in table.column_names
+    assert "cnt" in table.column_names
+    assert "total_val" in table.column_names

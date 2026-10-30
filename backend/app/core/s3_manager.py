@@ -17,8 +17,8 @@ class S3BucketProfile(BaseModel):
     name: str
     bucket: str
     region: str = "us-east-1"
-    access_key_id: str
-    secret_access_key: str
+    access_key_id: Optional[str] = ""
+    secret_access_key: Optional[str] = ""
     endpoint_url: Optional[str] = None
     use_ssl: bool = True
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -53,8 +53,11 @@ class S3BrowseResponse(BaseModel):
     total_bytes_in_folder: int
     total_bytes_formatted: str
     is_partitioned: bool
+    has_more: bool = False
 
 def mask_key(key: str) -> str:
+    if not key or key in ["IAM_ROLE", "DEFAULT"]:
+        return "AWS IAM / Default Credential Chain"
     if len(key) <= 8:
         return "••••••••"
     return f"{key[:4]}••••••••{key[-4:]}"
@@ -129,16 +132,23 @@ class S3ProfilesManager:
         cfg = Config(
             region_name=profile.region,
             s3={'addressing_style': 'path' if profile.endpoint_url else 'auto'},
-            retries={'max_attempts': 3, 'mode': 'standard'}
+            retries={'max_attempts': 3, 'mode': 'standard'},
+            connect_timeout=5,
+            read_timeout=15
         )
-        return boto3.client(
-            's3',
-            aws_access_key_id=profile.access_key_id,
-            aws_secret_access_key=profile.secret_access_key,
-            endpoint_url=profile.endpoint_url,
-            use_ssl=profile.use_ssl,
-            config=cfg
-        )
+        kwargs: dict[str, Any] = {
+            'service_name': 's3',
+            'region_name': profile.region,
+            'endpoint_url': profile.endpoint_url,
+            'use_ssl': profile.use_ssl,
+            'config': cfg
+        }
+        # If explicit credentials provided, pass them; otherwise boto3 uses IAM Role / Default Credential Chain
+        if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+            kwargs['aws_access_key_id'] = profile.access_key_id
+            kwargs['aws_secret_access_key'] = profile.secret_access_key
+
+        return boto3.client(**kwargs)
 
     def test_connection(self, profile_id: str) -> dict:
         profile = self.get_profile(profile_id)
@@ -151,12 +161,14 @@ class S3ProfilesManager:
             # Test with HeadBucket or ListObjectsV2
             client.head_bucket(Bucket=profile.bucket)
             latency = (time.time() - t0) * 1000
+            auth_type = "IAM / Default Chain" if not profile.access_key_id or profile.access_key_id in ["IAM_ROLE", "DEFAULT"] else "Access Key"
             return {
                 "success": True,
                 "profile_id": profile.id,
                 "bucket": profile.bucket,
                 "latency_ms": round(latency, 1),
-                "message": f"Successfully connected to bucket '{profile.bucket}' in {latency:.1f}ms."
+                "auth_type": auth_type,
+                "message": f"Successfully connected to bucket '{profile.bucket}' in {latency:.1f}ms ({auth_type})."
             }
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "Unknown")
@@ -176,7 +188,7 @@ class S3ProfilesManager:
                 "message": f"Connection failed: {str(e)}"
             }
 
-    def browse_folder(self, profile_id: str, prefix: str = "") -> S3BrowseResponse:
+    def browse_folder(self, profile_id: str, prefix: str = "", max_items: int = 1000) -> S3BrowseResponse:
         profile = self.get_profile(profile_id)
         if not profile:
             raise ValueError(f"Profile '{profile_id}' not found.")
@@ -197,13 +209,17 @@ class S3ProfilesManager:
         subfolders = []
         files = []
         total_bytes = 0
+        has_more = False
 
         for page in page_iterator:
             for common_prefix in page.get('CommonPrefixes', []):
                 folder_path = common_prefix.get('Prefix', '')
                 folder_name = folder_path[len(clean_prefix):].rstrip('/')
-                if folder_name:
+                if folder_name and folder_name not in subfolders:
                     subfolders.append(folder_name)
+                if len(subfolders) >= max_items:
+                    has_more = True
+                    break
 
             for obj in page.get('Contents', []):
                 key = obj.get('Key', '')
@@ -225,6 +241,12 @@ class S3ProfilesManager:
                     last_modified=last_mod,
                     is_parquet=is_pqt
                 ))
+                if len(files) >= max_items:
+                    has_more = True
+                    break
+
+            if has_more:
+                break
 
         # Check for Hive partitioning (folders containing '=' like date=2026-10-29 or year=2026)
         is_partitioned = any("=" in sf for sf in subfolders)
@@ -238,7 +260,8 @@ class S3ProfilesManager:
             total_files_in_folder=len(files),
             total_bytes_in_folder=total_bytes,
             total_bytes_formatted=format_bytes(total_bytes),
-            is_partitioned=is_partitioned
+            is_partitioned=is_partitioned,
+            has_more=has_more
         )
 
 s3_manager = S3ProfilesManager()

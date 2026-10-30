@@ -48,6 +48,22 @@ class PolarsEngine(BaseEngine):
             posix_p = to_posix_path(file_path)
             lf = pl.scan_parquet(posix_p)
 
+        posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
+
+        if query.raw_sql:
+            ctx = pl.SQLContext()
+            ctx.register("data", lf)
+            if query.dataset:
+                ctx.register(query.dataset, lf)
+            sql = query.raw_sql.replace(":dataset", "data")
+            if f"read_parquet('{posix_p}')" in sql:
+                sql = sql.replace(f"read_parquet('{posix_p}')", "data")
+            if count_only:
+                clean_sql = sql.rstrip("; \t\n")
+                count_sql = f"SELECT COUNT(*) AS total_count FROM ({clean_sql}) AS _raw_count_subq"
+                return ctx.execute(count_sql)
+            return ctx.execute(sql)
+
         # Filters
         predicates = []
         for f in query.filters:
@@ -138,11 +154,11 @@ class PolarsEngine(BaseEngine):
         return lf
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
-        posix_p = to_posix_path(file_path)
+        posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
 
         # 1. Total matching count
-        # Ultra-fast path: If no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
-        if not query.filters and not query.raw_sql and not query.groupBy:
+        # Ultra-fast path: If local file and no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
+        if not file_path.startswith("s3://") and not query.filters and not query.raw_sql and not query.groupBy:
             try:
                 import pyarrow.parquet as pq
                 total_rows = pq.ParquetFile(posix_p).metadata.num_rows
