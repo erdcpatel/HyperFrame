@@ -269,6 +269,18 @@ class DuckDBEngine(BaseEngine):
         finally:
             cursor.close()
 
+    def export_csv(self, query: HyperQuery, file_path: str, output_path: str) -> None:
+        self._apply_s3_credentials(file_path, query.dataset)
+        posix_out = to_posix_path(output_path)
+        cursor = self._con.cursor()
+        try:
+            self._sync_catalog_views(cursor, query.dataset, file_path)
+            sql = self._compile_sql(query, file_path, count_only=False).rstrip("; \t\n")
+            copy_sql = f"COPY ({sql}) TO '{posix_out}' (HEADER, DELIMITER ',')"
+            cursor.execute(copy_sql)
+        finally:
+            cursor.close()
+
     def unload(self) -> None:
         try:
             self._con.close()

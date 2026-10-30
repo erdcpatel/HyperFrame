@@ -266,6 +266,42 @@ class PolarsEngine(BaseEngine):
             except Exception as e:
                 return f"Polars plan explain: {str(e)}"
 
+    def export_csv(self, query: HyperQuery, file_path: str, output_path: str) -> None:
+        posix_out = to_posix_path(output_path)
+        if query.raw_sql:
+            base_lf = self._scan_parquet(file_path, query.dataset)
+            with pl.SQLContext() as ctx:
+                ctx.register("data", base_lf)
+                if query.dataset:
+                    ctx.register(query.dataset, base_lf)
+                import re
+                sql = query.raw_sql.replace(":dataset", "data")
+                sql = re.sub(r"read_parquet\([^)]*\)", "data", sql, flags=re.IGNORECASE).rstrip("; \t\n")
+                data_lf = ctx.execute(sql)
+                try:
+                    data_lf.sink_csv(posix_out)
+                    return
+                except Exception:
+                    df = data_lf.collect()
+                    try:
+                        df.write_csv(posix_out)
+                        return
+                    except Exception:
+                        from backend.app.utils.serialization import write_arrow_table_to_csv
+                        write_arrow_table_to_csv(df.to_arrow(), posix_out)
+                        return
+
+        lf = self._build_lazy_plan(query, file_path, count_only=False)
+        try:
+            lf.sink_csv(posix_out)
+        except Exception:
+            try:
+                df = lf.collect()
+                df.write_csv(posix_out)
+            except Exception:
+                from backend.app.utils.serialization import write_arrow_table_to_csv
+                write_arrow_table_to_csv(df.to_arrow(), posix_out)
+
     def unload(self) -> None:
         # Polars lazy frames are stateless and deallocated on garbage collection
         pass

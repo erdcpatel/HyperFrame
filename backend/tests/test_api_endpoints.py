@@ -73,18 +73,19 @@ def test_ag_grid_adapter(api_sample):
     assert "waterfall" in res_data
 
 def test_export_csv(api_sample):
-    payload = {
-        "dataset": api_sample,
-        "engine": "duckdb",
-        "select": ["trade_id", "symbol", "price"],
-        "limit": 10
-    }
-    res = client.post("/api/query/export", json=payload)
-    assert res.status_code == 200
-    assert "text/csv" in res.headers.get("content-type", "")
-    content = res.text
-    assert "trade_id" in content
-    assert "symbol" in content
+    for eng in ["duckdb", "polars", "perspective"]:
+        payload = {
+            "dataset": api_sample,
+            "engine": eng,
+            "select": ["trade_id", "symbol", "price"],
+            "limit": 10
+        }
+        res = client.post("/api/query/export", json=payload)
+        assert res.status_code == 200
+        assert "text/csv" in res.headers.get("content-type", "")
+        content = res.text
+        assert "trade_id" in content
+        assert "symbol" in content
 
 def test_type_coerced_filter(api_sample):
     # Test numeric string "500.0" against float column in DuckDB and Polars
@@ -156,4 +157,25 @@ def test_excel_upload(tmp_path):
     assert len(q_res.json()["data"]) == 3
 
     catalog.delete_dataset("test_excel_ds")
+
+def test_write_arrow_table_to_csv_large_string_and_nested(tmp_path):
+    import pyarrow as pa
+    from backend.app.utils.serialization import write_arrow_table_to_csv
+
+    t = pa.table({
+        "id": [1, 2],
+        "large_str": pa.array(["alpha_large" * 10, "beta_large" * 10], type=pa.large_string()),
+        "sv": pa.array(["alice", "bob"], type=pa.string_view()),
+        "tags": pa.array([["apple", "banana"], ["cherry"]], type=pa.list_(pa.string())),
+        "meta": pa.array([{"score": 90}, {"score": 95}])
+    })
+    out_csv = tmp_path / "complex_export.csv"
+    write_arrow_table_to_csv(t, str(out_csv))
+    assert out_csv.exists()
+    content = out_csv.read_text()
+    assert "large_str" in content
+    assert "alpha_large" in content
+    assert "alice" in content
+    assert "apple" in content
+
 

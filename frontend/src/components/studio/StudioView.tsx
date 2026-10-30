@@ -48,7 +48,7 @@ export const StudioView: React.FC<Props> = React.memo(({
         engine,
         filters,
         quick_search: quickSearch.trim() || undefined,
-        limit: 100000,
+        limit: 0, // 0 = export all matching rows without arbitrary truncation
       };
       await exportQueryCsv(q);
     } catch (err: any) {

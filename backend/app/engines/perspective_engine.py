@@ -216,6 +216,11 @@ class PerspectiveEngine(BaseEngine):
             return f"Perspective Hybrid Pushdown: Pre-aggregated with DuckDB 2.0 Vector Scan on '{query.dataset}' ({file_size_mb:.1f} MB), materialized into Perspective C++ view for 60 FPS presentation."
         return f"Perspective In-Memory Engine: Direct C++ Apache Arrow buffer execution on hosted table '{query.dataset}'."
 
+    def export_csv(self, query: HyperQuery, file_path: str, output_path: str) -> None:
+        if file_path.startswith("s3://"):
+            return self._get_duckdb().export_csv(query, file_path, output_path)
+        super().export_csv(query, file_path, output_path)
+
     def unload(self) -> None:
         """
         Explicitly delete all hosted C++ tables to recover RAM.

@@ -166,7 +166,9 @@ def query_ag_grid(req: AgGridRequest):
 @router.post("/export")
 def export_query_csv(query: HyperQuery):
     """
-    Streams filtered/aggregated results to CSV using DuckDB's zero-copy COPY TO or Polars sink_csv.
+    Streams filtered/aggregated results to CSV using DuckDB's zero-copy COPY TO,
+    Polars sink_csv, or PyArrow batched streaming writer.
+    Supports multi-GB uncompressed files, large_string, string_view, and out-of-core streaming.
     """
     file_path = catalog.get_dataset_path(query.dataset)
     if not file_path:
@@ -176,17 +178,13 @@ def export_query_csv(query: HyperQuery):
     tmp_export = Path(tempfile.gettempdir()) / f"hyperframe_{query.dataset}_{unique_id}.csv"
     engine = lifecycle_manager.get_engine(query.engine)
     
-    # Query up to 100k rows for export
     export_q = query.model_copy()
-    if export_q.limit <= 0 or export_q.limit > 100000:
-        export_q.limit = 100000
+    # If limit is negative, treat as 0 (no limit, export entire matching dataset)
+    if export_q.limit < 0:
+        export_q.limit = 0
 
     try:
-        arrow_table, _, _ = engine.execute_query(export_q, file_path)
-        
-        # Write to CSV cleanly
-        import pyarrow.csv as pacsv
-        pacsv.write_csv(arrow_table, tmp_export)
+        engine.export_csv(export_q, file_path, str(tmp_export))
 
         def cleanup_temp_file():
             try:

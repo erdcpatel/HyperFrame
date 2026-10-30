@@ -35,3 +35,14 @@ class BaseEngine(ABC):
         Explicitly purges in-memory tables, clears caches, and frees RAM.
         """
         pass
+
+    def export_csv(self, query: HyperQuery, file_path: str, output_path: str) -> None:
+        """
+        Exports query results directly to CSV. Engines can override this to stream
+        out-of-core (e.g. DuckDB COPY TO, Polars sink_csv) without loading multi-GB
+        data into RAM or encountering 2GB PyArrow buffer limits.
+        """
+        arrow_table, _, _ = self.execute_query(query, file_path)
+        from backend.app.utils.serialization import write_arrow_table_to_csv
+        write_arrow_table_to_csv(arrow_table, output_path)
+
