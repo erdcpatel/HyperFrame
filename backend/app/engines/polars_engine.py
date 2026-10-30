@@ -176,8 +176,8 @@ class PolarsEngine(BaseEngine):
                 if query.dataset:
                     ctx.register(query.dataset, base_lf)
                 sql = query.raw_sql.replace(":dataset", "data")
-                if f"read_parquet('{posix_p}')" in sql:
-                    sql = sql.replace(f"read_parquet('{posix_p}')", "data")
+                import re
+                sql = re.sub(r"read_parquet\([^)]*\)", "data", sql, flags=re.IGNORECASE)
                 clean_sql = sql.rstrip("; \t\n")
 
                 count_sql = f"SELECT COUNT(*) AS total_count FROM ({clean_sql}) AS _raw_count_subq"
@@ -250,9 +250,12 @@ class PolarsEngine(BaseEngine):
                 if query.dataset:
                     ctx.register(query.dataset, base_lf)
                 sql = query.raw_sql.replace(":dataset", "data")
-                if f"read_parquet('{posix_p}')" in sql:
-                    sql = sql.replace(f"read_parquet('{posix_p}')", "data")
-                return ctx.execute(sql.rstrip("; \t\n")).explain()
+                import re
+                sql = re.sub(r"read_parquet\([^)]*\)", "data", sql, flags=re.IGNORECASE)
+                clean_sql = sql.rstrip("; \t\n")
+                if clean_sql.lower().startswith("explain"):
+                    clean_sql = clean_sql[7:].strip()
+                return ctx.execute(clean_sql).explain()
 
         lf = self._build_lazy_plan(query, file_path, count_only=False)
         try:

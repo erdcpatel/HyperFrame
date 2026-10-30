@@ -222,41 +222,34 @@ export const App: React.FC = () => {
       setQueryString(queryStr);
       setTotalMatchingRows(totalRows);
       setReturnedRows(retRows);
-
-      // Only fetch heavy EXPLAIN plan if X-Ray drawer is currently open (massive scroll performance speedup!)
-      if (activeDatasetId && xrayOpenRef.current) {
-        try {
-          const planRes = await explainQuery({
-            dataset: activeDatasetId,
-            engine: activeEngine,
-            raw_sql: queryStr,
-            limit: 50,
-          });
-          setPlanString(planRes.plan);
-        } catch {
-          setPlanString('Execution plan unavailable for current query expression.');
-        }
-      }
     },
-    [activeDatasetId, activeEngine]
+    []
   );
 
-  const handleToggleXray = async () => {
-    const nextState = !xrayOpen;
-    setXrayOpen(nextState);
-    if (nextState && activeDatasetId && queryString) {
-      try {
-        const planRes = await explainQuery({
-          dataset: activeDatasetId,
-          engine: activeEngine,
-          raw_sql: queryString,
-          limit: 50,
+  // Live update X-Ray physical execution plan whenever drawer is open
+  useEffect(() => {
+    if (xrayOpen && activeDatasetId && queryString) {
+      let isCurrent = true;
+      explainQuery({
+        dataset: activeDatasetId,
+        engine: activeEngine,
+        raw_sql: queryString,
+        limit: 50,
+      })
+        .then((planRes) => {
+          if (isCurrent) setPlanString(planRes.plan);
+        })
+        .catch((err) => {
+          if (isCurrent) setPlanString(`Execution plan error: ${err.message || 'Expression unavailable'}`);
         });
-        setPlanString(planRes.plan);
-      } catch {
-        setPlanString('Execution plan unavailable for current query expression.');
-      }
+      return () => {
+        isCurrent = false;
+      };
     }
+  }, [xrayOpen, activeDatasetId, activeEngine, queryString]);
+
+  const handleToggleXray = () => {
+    setXrayOpen((prev) => !prev);
   };
 
   return (

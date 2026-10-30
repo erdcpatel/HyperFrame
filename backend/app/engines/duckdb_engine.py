@@ -77,9 +77,12 @@ class DuckDBEngine(BaseEngine):
         read_expr = f"read_parquet('{posix_p}', union_by_name=true, hive_partitioning=true)"
 
         if query.raw_sql:
-            sql = query.raw_sql.replace(":dataset", read_expr)
-            if read_expr not in sql and query.dataset in sql:
-                sql = sql.replace(query.dataset, read_expr)
+            sql = query.raw_sql
+            if ":dataset" in sql:
+                sql = sql.replace(":dataset", read_expr)
+            elif "read_parquet(" not in sql:
+                import re
+                sql = re.sub(rf"\b{re.escape(query.dataset)}\b", read_expr, sql)
             if count_only:
                 clean_sql = sql.rstrip("; \t\n")
                 return f"SELECT COUNT(*) FROM ({clean_sql}) AS _raw_count_subq"
@@ -257,8 +260,9 @@ class DuckDBEngine(BaseEngine):
         cursor = self._con.cursor()
         try:
             self._sync_catalog_views(cursor, query.dataset, file_path)
-            sql = self._compile_sql(query, file_path, count_only=False)
-            res = cursor.sql(f"EXPLAIN ANALYZE {sql}").fetchall()
+            sql = self._compile_sql(query, file_path, count_only=False).rstrip("; \t\n")
+            explain_sql = sql if sql.lower().startswith("explain") else f"EXPLAIN ANALYZE {sql}"
+            res = cursor.sql(explain_sql).fetchall()
             return "\n".join(str(r[1]) if len(r) > 1 else str(r[0]) for r in res)
         except Exception as e:
             return f"EXPLAIN error: {str(e)}"
