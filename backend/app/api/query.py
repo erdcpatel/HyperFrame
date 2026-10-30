@@ -1,12 +1,17 @@
 import os
+import uuid
+import logging
 import tempfile
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from typing import Any
 import pyarrow as pa
 import duckdb
 import polars as pl
+
+logger = logging.getLogger("hyperframe.query")
 
 from backend.app.models.query import (
     HyperQuery, QueryResponse, AgGridRequest, HyperFilter, HyperSort, QueryWaterfall
@@ -167,7 +172,8 @@ def export_query_csv(query: HyperQuery):
     if not file_path:
         raise HTTPException(status_code=404, detail=f"Dataset '{query.dataset}' not registered.")
 
-    tmp_export = Path(tempfile.gettempdir()) / f"hyperframe_{query.dataset}_export.csv"
+    unique_id = uuid.uuid4().hex[:8]
+    tmp_export = Path(tempfile.gettempdir()) / f"hyperframe_{query.dataset}_{unique_id}.csv"
     engine = lifecycle_manager.get_engine(query.engine)
     
     # Query up to 100k rows for export
@@ -175,17 +181,34 @@ def export_query_csv(query: HyperQuery):
     if export_q.limit <= 0 or export_q.limit > 100000:
         export_q.limit = 100000
 
-    arrow_table, _, _ = engine.execute_query(export_q, file_path)
-    
-    # Write to CSV cleanly
-    import pyarrow.csv as pacsv
-    pacsv.write_csv(arrow_table, tmp_export)
+    try:
+        arrow_table, _, _ = engine.execute_query(export_q, file_path)
+        
+        # Write to CSV cleanly
+        import pyarrow.csv as pacsv
+        pacsv.write_csv(arrow_table, tmp_export)
 
-    return FileResponse(
-        path=str(tmp_export),
-        filename=f"hyperframe_{query.dataset}_export.csv",
-        media_type="text/csv"
-    )
+        def cleanup_temp_file():
+            try:
+                if tmp_export.exists():
+                    tmp_export.unlink()
+            except Exception:
+                pass
+
+        return FileResponse(
+            path=str(tmp_export),
+            filename=f"hyperframe_{query.dataset}_export.csv",
+            media_type="text/csv",
+            background=BackgroundTask(cleanup_temp_file)
+        )
+    except Exception as e:
+        logger.exception(f"Export query CSV failed on {query.dataset}: {e}")
+        try:
+            if tmp_export.exists():
+                tmp_export.unlink()
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=f"Export failed: {str(e)}")
 
 @router.post("/explain")
 def explain_query(query: HyperQuery):

@@ -75,7 +75,26 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         duration_ms = (time.time() - t0) * 1000
         logger.error(f"<== [{method}] {path} -> FAILED ({duration_ms:.1f}ms): {e}")
-        raise
+        # Unpack ExceptionGroup if present (Python 3.11+ TaskGroup wrapper)
+        msg = str(e)
+        if hasattr(e, "exceptions") and e.exceptions:
+            msg = "; ".join(str(sub_e) for sub_e in e.exceptions)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Request processing error: {msg}"}
+        )
+
+# Global Unhandled Exception Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+    msg = str(exc)
+    if hasattr(exc, "exceptions") and exc.exceptions:
+        msg = "; ".join(str(sub_e) for sub_e in exc.exceptions)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {msg}"}
+    )
 
 # Register API Routers
 app.include_router(datasets_router)
