@@ -26,43 +26,31 @@ class PolarsEngine(BaseEngine):
     def name(self) -> str:
         return "polars"
 
-    def _build_lazy_plan(self, query: HyperQuery, file_path: str, count_only: bool = False) -> pl.LazyFrame:
+    def _scan_parquet(self, file_path: str, dataset_id: str) -> pl.LazyFrame:
         if file_path.startswith("s3://"):
             from backend.app.core.catalog import catalog
             from backend.app.core.s3_manager import s3_manager
-            cat_entry = catalog._read_catalog().get(query.dataset, {})
+            cat_entry = catalog._read_catalog().get(dataset_id, {})
             profile_id = cat_entry.get("s3_profile_id")
             storage_options = None
             if profile_id:
                 profile = s3_manager.get_profile(profile_id)
                 if profile:
                     storage_options = {
-                        "aws_access_key_id": profile.access_key_id,
-                        "aws_secret_access_key": profile.secret_access_key,
                         "aws_region": profile.region
                     }
+                    if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+                        storage_options["aws_access_key_id"] = profile.access_key_id
+                        storage_options["aws_secret_access_key"] = profile.secret_access_key
                     if profile.endpoint_url:
                         storage_options["aws_endpoint"] = profile.endpoint_url
-            lf = pl.scan_parquet(file_path, storage_options=storage_options)
+            return pl.scan_parquet(file_path, storage_options=storage_options)
         else:
             posix_p = to_posix_path(file_path)
-            lf = pl.scan_parquet(posix_p)
+            return pl.scan_parquet(posix_p)
 
-        posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
-
-        if query.raw_sql:
-            ctx = pl.SQLContext()
-            ctx.register("data", lf)
-            if query.dataset:
-                ctx.register(query.dataset, lf)
-            sql = query.raw_sql.replace(":dataset", "data")
-            if f"read_parquet('{posix_p}')" in sql:
-                sql = sql.replace(f"read_parquet('{posix_p}')", "data")
-            if count_only:
-                clean_sql = sql.rstrip("; \t\n")
-                count_sql = f"SELECT COUNT(*) AS total_count FROM ({clean_sql}) AS _raw_count_subq"
-                return ctx.execute(count_sql)
-            return ctx.execute(sql)
+    def _build_lazy_plan(self, query: HyperQuery, file_path: str, count_only: bool = False) -> pl.LazyFrame:
+        lf = self._scan_parquet(file_path, query.dataset)
 
         # Filters
         predicates = []
@@ -156,9 +144,38 @@ class PolarsEngine(BaseEngine):
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
 
+        # Path A: Raw SQL execution via scoped SQLContext
+        if query.raw_sql:
+            base_lf = self._scan_parquet(file_path, query.dataset)
+            with pl.SQLContext() as ctx:
+                ctx.register("data", base_lf)
+                if query.dataset:
+                    ctx.register(query.dataset, base_lf)
+                sql = query.raw_sql.replace(":dataset", "data")
+                if f"read_parquet('{posix_p}')" in sql:
+                    sql = sql.replace(f"read_parquet('{posix_p}')", "data")
+                clean_sql = sql.rstrip("; \t\n")
+
+                count_sql = f"SELECT COUNT(*) AS total_count FROM ({clean_sql}) AS _raw_count_subq"
+                try:
+                    count_df = ctx.execute(count_sql).collect()
+                    total_rows = int(count_df["total_count"][0])
+                except Exception:
+                    total_rows = 0
+
+                data_lf = ctx.execute(clean_sql)
+                try:
+                    plan_str = data_lf.explain()
+                except Exception:
+                    plan_str = "Polars SQL Lazy Plan"
+
+                df = data_lf.collect()
+                return df.to_arrow(), plan_str, total_rows
+
+        # Path B: Canonical HyperQuery execution with streaming engine
         # 1. Total matching count
         # Ultra-fast path: If local file and no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
-        if not file_path.startswith("s3://") and not query.filters and not query.raw_sql and not query.groupBy:
+        if not file_path.startswith("s3://") and not query.filters and not query.groupBy:
             try:
                 import pyarrow.parquet as pq
                 total_rows = pq.ParquetFile(posix_p).metadata.num_rows
@@ -198,6 +215,18 @@ class PolarsEngine(BaseEngine):
         return arrow_table, plan_str, total_rows
 
     def explain(self, query: HyperQuery, file_path: str) -> str:
+        if query.raw_sql:
+            posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
+            base_lf = self._scan_parquet(file_path, query.dataset)
+            with pl.SQLContext() as ctx:
+                ctx.register("data", base_lf)
+                if query.dataset:
+                    ctx.register(query.dataset, base_lf)
+                sql = query.raw_sql.replace(":dataset", "data")
+                if f"read_parquet('{posix_p}')" in sql:
+                    sql = sql.replace(f"read_parquet('{posix_p}')", "data")
+                return ctx.execute(sql.rstrip("; \t\n")).explain()
+
         lf = self._build_lazy_plan(query, file_path, count_only=False)
         try:
             return lf.explain(engine="streaming")
