@@ -65,6 +65,8 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
 
   // Folder Browser State
   const [currentPrefix, setCurrentPrefix] = useState('');
+  const [pathInput, setPathInput] = useState('');
+  const [isEditingPath, setIsEditingPath] = useState(false);
   const [browseData, setBrowseData] = useState<S3BrowseResponse | null>(null);
   const [loadingBrowse, setLoadingBrowse] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
@@ -227,6 +229,29 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
       parts.pop();
       setCurrentPrefix(parts.join('/') + '/');
     }
+  };
+
+  const handleNavigateDirectPath = (e: React.FormEvent) => {
+    e.preventDefault();
+    let p = pathInput.trim();
+    // Normalize user input (supports pasting full s3://bucket/path or just path)
+    if (activeProfile && p.startsWith(`s3://${activeProfile.bucket}`)) {
+      p = p.substring(`s3://${activeProfile.bucket}`.length);
+    } else if (p.startsWith('s3://')) {
+      const parts = p.substring(5).split('/');
+      const bName = parts[0];
+      const matchProf = profiles.find((prof) => prof.bucket === bName);
+      if (matchProf && matchProf.id !== selectedProfileId) {
+        setSelectedProfileId(matchProf.id);
+      }
+      p = parts.slice(1).join('/');
+    }
+    p = p.replace(/^\/+/, '');
+    if (p && !p.endsWith('/')) {
+      p += '/';
+    }
+    setCurrentPrefix(p);
+    setIsEditingPath(false);
   };
 
   const handlePreview = async () => {
@@ -471,29 +496,79 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
               <ArrowUp className="w-4 h-4" />
             </button>
 
-            {/* Interactive Clickable Breadcrumbs */}
-            <div className="flex items-center gap-1.5 bg-[#070b13] border border-[#1d2943] rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300 overflow-x-auto flex-1">
-              <span
-                onClick={() => handleBreadcrumbClick(-1, [])}
-                className="cursor-pointer hover:text-blue-400 text-amber-400 font-bold shrink-0 flex items-center gap-1"
-              >
-                <HardDrive className="w-3.5 h-3.5" />
-                <span>s3://{activeProfile?.bucket || 'select-bucket'}</span>
-              </span>
-              <span className="text-slate-600">/</span>
-
-              {breadcrumbParts.map((part, idx) => (
-                <React.Fragment key={idx}>
-                  <span
-                    onClick={() => handleBreadcrumbClick(idx, breadcrumbParts)}
-                    className="cursor-pointer hover:text-blue-400 hover:underline shrink-0 text-slate-200"
-                  >
-                    {part}
+            {/* Interactive Clickable Breadcrumbs OR Direct Path Input */}
+            {isEditingPath ? (
+              <form onSubmit={handleNavigateDirectPath} className="flex-1 flex items-center gap-1.5">
+                <div className="flex-1 flex items-center gap-1.5 bg-[#070b13] border border-blue-500 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-200 shadow-inner">
+                  <span className="text-amber-400 font-bold shrink-0 flex items-center gap-1 select-none">
+                    <HardDrive className="w-3.5 h-3.5" />
+                    <span>s3://{activeProfile?.bucket || 'bucket'}/</span>
                   </span>
-                  <span className="text-slate-600">/</span>
-                </React.Fragment>
-              ))}
-            </div>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="paste folder path (e.g. data/lake/2026/10/)"
+                    value={pathInput}
+                    onChange={(e) => setPathInput(e.target.value)}
+                    className="w-full bg-transparent border-none outline-none text-slate-100 placeholder-slate-600 font-mono text-xs"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-sm"
+                >
+                  Go
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPath(false)}
+                  className="p-1.5 hover:bg-[#1a253c] text-slate-400 hover:text-slate-200 rounded text-xs shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </form>
+            ) : (
+              <div
+                onClick={() => {
+                  setPathInput(currentPrefix);
+                  setIsEditingPath(true);
+                }}
+                className="group flex items-center gap-1.5 bg-[#070b13] border border-[#1d2943] hover:border-blue-500/50 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300 overflow-x-auto flex-1 cursor-text transition-colors"
+                title="Click to manually edit or paste full S3 path"
+              >
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleBreadcrumbClick(-1, []);
+                  }}
+                  className="cursor-pointer hover:text-blue-400 text-amber-400 font-bold shrink-0 flex items-center gap-1"
+                >
+                  <HardDrive className="w-3.5 h-3.5" />
+                  <span>s3://{activeProfile?.bucket || 'select-bucket'}</span>
+                </span>
+                <span className="text-slate-600">/</span>
+
+                {breadcrumbParts.map((part, idx) => (
+                  <React.Fragment key={idx}>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBreadcrumbClick(idx, breadcrumbParts);
+                      }}
+                      className="cursor-pointer hover:text-blue-400 hover:underline shrink-0 text-slate-200"
+                    >
+                      {part}
+                    </span>
+                    <span className="text-slate-600">/</span>
+                  </React.Fragment>
+                ))}
+
+                <span className="text-[10px] text-slate-500 font-sans ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                  <Edit2 className="w-3 h-3 text-slate-400" />
+                  <span>Edit Path</span>
+                </span>
+              </div>
+            )}
 
             {/* Refresh Current Directory */}
             <button
