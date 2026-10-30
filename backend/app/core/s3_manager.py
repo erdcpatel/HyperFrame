@@ -267,23 +267,27 @@ class S3ProfilesManager:
                 "message": f"Connection failed: {str(e)}"
             }
 
-    def browse_folder(self, profile_id: str, prefix: str = "", max_items: int = 1000) -> S3BrowseResponse:
+    def browse_folder(self, profile_id: str, prefix: str = "", max_items: int = 5000) -> S3BrowseResponse:
         profile = self.get_profile(profile_id)
         if not profile:
             raise ValueError(f"Profile '{profile_id}' not found.")
 
-        # Ensure prefix ends with '/' if not empty
-        clean_prefix = prefix.strip()
-        if clean_prefix and not clean_prefix.endswith("/"):
+        # Ensure clean prefix: empty string for root, or trailing slash for subdirectories
+        clean_prefix = prefix.strip().strip("/")
+        if clean_prefix:
             clean_prefix += "/"
 
         client = self.get_boto_client(profile)
         paginator = client.get_paginator('list_objects_v2')
-        page_iterator = paginator.paginate(
-            Bucket=profile.bucket,
-            Prefix=clean_prefix,
-            Delimiter='/'
-        )
+
+        paginate_kwargs: dict[str, Any] = {
+            'Bucket': profile.bucket,
+            'Delimiter': '/'
+        }
+        if clean_prefix:
+            paginate_kwargs['Prefix'] = clean_prefix
+
+        page_iterator = paginator.paginate(**paginate_kwargs)
 
         subfolders = []
         files = []
@@ -291,44 +295,54 @@ class S3ProfilesManager:
         has_more = False
 
         for page in page_iterator:
+            # 1. Standard Delimiter CommonPrefixes
             for common_prefix in page.get('CommonPrefixes', []):
                 folder_path = common_prefix.get('Prefix', '')
                 folder_name = folder_path[len(clean_prefix):].rstrip('/')
                 if folder_name and folder_name not in subfolders:
                     subfolders.append(folder_name)
-                if len(subfolders) >= max_items:
-                    has_more = True
-                    break
 
+            # 2. Files and directory marker objects in this directory
             for obj in page.get('Contents', []):
                 key = obj.get('Key', '')
-                if key == clean_prefix:
-                    continue  # Directory marker object
-                file_name = key[len(clean_prefix):]
-                if not file_name:
+                if not key or key == clean_prefix:
+                    continue  # Skip root or directory marker object
+
+                # Relative name within current directory
+                sub_key = key[len(clean_prefix):] if clean_prefix else key
+                if not sub_key:
                     continue
+
+                # If key has sub-slashes (e.g. S3 server didn't honor Delimiter or directory object)
+                if "/" in sub_key:
+                    virtual_folder = sub_key.split("/")[0]
+                    if virtual_folder and virtual_folder not in subfolders:
+                        subfolders.append(virtual_folder)
+                    continue
+
                 size = obj.get('Size', 0)
                 total_bytes += size
                 last_mod = obj.get('LastModified', datetime.now()).isoformat()
                 is_pqt = any(key.lower().endswith(ext) for ext in ['.parquet', '.pqt'])
 
                 files.append(S3FileItem(
-                    name=file_name,
+                    name=sub_key,
                     key=key,
                     size_bytes=size,
                     size_formatted=format_bytes(size),
                     last_modified=last_mod,
                     is_parquet=is_pqt
                 ))
-                if len(files) >= max_items:
-                    has_more = True
-                    break
 
-            if has_more:
+            if len(subfolders) + len(files) >= max_items:
+                has_more = True
                 break
 
         # Check for Hive partitioning (folders containing '=' like date=2026-10-29 or year=2026)
         is_partitioned = any("=" in sf for sf in subfolders)
+        logger.info(
+            f"Browse 's3://{profile.bucket}/{clean_prefix}': found {len(subfolders)} subfolders, {len(files)} files"
+        )
 
         return S3BrowseResponse(
             profile_id=profile.id,
