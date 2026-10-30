@@ -26,8 +26,8 @@ const DEFAULT_COL_DEF: ColDef = {
   filter: true,
   resizable: true,
   filterParams: {
-    buttons: ['apply', 'clear'],
-    closeOnApply: false,
+    buttons: ['apply', 'reset', 'cancel'],
+    closeOnApply: true,
     debounceMs: 200,
   },
 };
@@ -73,6 +73,11 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
         pinned: isPrimaryKey ? 'left' : undefined,
         sortable: true,
         filter: isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter',
+        filterParams: {
+          buttons: ['apply', 'reset', 'cancel'],
+          closeOnApply: true,
+          debounceMs: 200,
+        },
         resizable: true,
         type: isNum ? 'numericColumn' : undefined,
         valueFormatter: isNum && col.name.includes('notional')
