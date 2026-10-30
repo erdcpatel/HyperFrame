@@ -56,9 +56,15 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
     onLoadingChangeRef.current = onLoadingChange;
   }, [onLoadingChange]);
 
+  const [dynamicCols, setDynamicCols] = useState<string[]>([]);
+
   // Derive column definitions from dataset schema with primary key pinned left
   const colDefs: ColDef[] = useMemo(() => {
-    return columns.map((col, idx) => {
+    const activeCols = columns.length > 0
+      ? columns.map((c) => ({ name: c.name, dtype: c.dtype }))
+      : dynamicCols.map((name) => ({ name, dtype: 'VARCHAR' }));
+
+    return activeCols.map((col, idx) => {
       const isNum = col.dtype.toLowerCase().includes('int') || col.dtype.toLowerCase().includes('float') || col.dtype.toLowerCase().includes('double');
       const isPrimaryKey = idx === 0 || ['id', 'trade_id', 'key', 'index'].includes(col.name.toLowerCase());
       return {
@@ -75,7 +81,7 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
         cellClass: isNum ? 'font-mono text-right' : 'font-mono text-xs',
       };
     });
-  }, [columns]);
+  }, [columns, dynamicCols]);
 
   const [gridError, setGridError] = useState<string | null>(null);
 
@@ -107,10 +113,15 @@ export const AgGridCanvas: React.FC<Props> = React.memo(({
             client_render_ms: Math.round(tRender),
           };
 
-          if (onWaterfallUpdateRef.current) {
-            onWaterfallUpdateRef.current(waterfallWithRender, res.query_string, res.totalCount, res.rows.length);
+          if (res.rows.length > 0 && columns.length === 0) {
+            setDynamicCols(Object.keys(res.rows[0]));
           }
-          params.successCallback(res.rows, res.totalCount);
+
+          const effectiveTotal = Math.max(res.totalCount ?? 0, res.rows.length);
+          if (onWaterfallUpdateRef.current) {
+            onWaterfallUpdateRef.current(waterfallWithRender, res.query_string, effectiveTotal, res.rows.length);
+          }
+          params.successCallback(res.rows, effectiveTotal);
         } catch (err: any) {
           const detail = err.response?.data?.detail || err.message || 'Engine query failed to complete';
           console.error('AG Grid datasource error:', err);

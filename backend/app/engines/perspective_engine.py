@@ -52,6 +52,20 @@ class PerspectiveEngine(BaseEngine):
 
         posix_p = to_posix_path(file_path)
         try:
+            if "*" in posix_p or Path(posix_p).is_dir():
+                # Multi-file or partitioned dataset: load via DuckDB Arrow scan into Perspective
+                import duckdb
+                con = duckdb.connect()
+                try:
+                    arrow_table = con.sql(f"SELECT * FROM read_parquet('{posix_p}', union_by_name=true, hive_partitioning=true);").arrow()
+                    if hasattr(arrow_table, "read_all"):
+                        arrow_table = arrow_table.read_all()
+                    table = self._client.table(arrow_table, name=dataset_id)
+                    self._active_tables[dataset_id] = table
+                    return
+                finally:
+                    con.close()
+
             file_size_mb = Path(posix_p).stat().st_size / (1024 * 1024)
             # Check available system RAM before attempting in-memory ingestion
             mem = psutil.virtual_memory()

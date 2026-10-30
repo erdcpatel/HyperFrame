@@ -476,23 +476,39 @@ class S3ProfilesManager:
         target_dir = settings.DATA_DIR / dataset_id
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Downloading {len(parquet_keys)} files from s3://{profile.bucket}/{clean_prefix} to {target_dir}...")
+        logger.info(f"[S3 Download] Initiating download of {len(parquet_keys)} files from 's3://{profile.bucket}/{clean_prefix}' to '{target_dir}'...")
         downloaded_count = 0
         total_bytes = 0
+        t_download_start = time.time()
 
-        for key in parquet_keys:
-            # Flatten or preserve relative path
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _download_file_task(key: str) -> tuple[int, str]:
             rel_name = key[len(clean_prefix):] if clean_prefix else key
             rel_name = rel_name.lstrip("/")
             local_file = target_dir / rel_name
             local_file.parent.mkdir(parents=True, exist_ok=True)
-
-            logger.info(f"Downloading {key} -> {local_file}")
+            # Use boto3 client download
             client.download_file(Bucket=profile.bucket, Key=key, Filename=str(local_file))
-            total_bytes += local_file.stat().st_size
-            downloaded_count += 1
+            return local_file.stat().st_size, key
 
-        logger.info(f"Successfully downloaded {downloaded_count} files ({format_bytes(total_bytes)}) to {target_dir}")
+        # Multi-threaded download with up to 16 concurrent network streams
+        max_workers = min(16, max(1, len(parquet_keys)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_key = {executor.submit(_download_file_task, k): k for k in parquet_keys}
+            for fut in as_completed(future_to_key):
+                try:
+                    f_size, f_key = fut.result()
+                    total_bytes += f_size
+                    downloaded_count += 1
+                    if downloaded_count % 10 == 0 or downloaded_count == len(parquet_keys):
+                        logger.info(f"[S3 Download] Progress: {downloaded_count}/{len(parquet_keys)} files ({format_bytes(total_bytes)}) downloaded...")
+                except Exception as ex:
+                    logger.error(f"[S3 Download] Failed downloading {future_to_key[fut]}: {ex}")
+                    raise
+
+        duration = time.time() - t_download_start
+        logger.info(f"[S3 Download] Successfully downloaded {downloaded_count} files ({format_bytes(total_bytes)}) in {duration:.2f}s to {target_dir}")
         return target_dir
 
 s3_manager = S3ProfilesManager()

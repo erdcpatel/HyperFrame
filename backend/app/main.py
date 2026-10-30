@@ -1,9 +1,20 @@
 import os
+import time
+import logging
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+
+# Configure structured, visible logging across the backend
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S"
+)
+logger = logging.getLogger("hyperframe")
+logger.setLevel(logging.INFO)
 
 from backend.app.config import settings
 from backend.app.api.datasets import router as datasets_router
@@ -44,6 +55,27 @@ async def add_security_and_isolation_headers(request: Request, call_next):
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
     return response
+
+# Detailed HTTP Request & Error Logger Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    path = request.url.path
+    # Skip noisy WebSocket / telemetry polling
+    if path == "/api/telemetry" or path.startswith("/static"):
+        return await call_next(request)
+
+    t0 = time.time()
+    method = request.method
+    logger.info(f"==> [{method}] {path}")
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(f"<== [{method}] {path} -> {response.status_code} ({duration_ms:.1f}ms)")
+        return response
+    except Exception as e:
+        duration_ms = (time.time() - t0) * 1000
+        logger.error(f"<== [{method}] {path} -> FAILED ({duration_ms:.1f}ms): {e}")
+        raise
 
 # Register API Routers
 app.include_router(datasets_router)

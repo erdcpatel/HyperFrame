@@ -1,9 +1,13 @@
+import os
+import logging
 import polars as pl
 import pyarrow as pa
 from typing import Tuple, Any, Optional
 from backend.app.engines.base import BaseEngine
 from backend.app.models.query import HyperQuery
 from backend.app.utils.paths import to_posix_path
+
+logger = logging.getLogger("hyperframe.polars")
 
 def _coerce_polars_val(val: Any) -> Any:
     if val is None:
@@ -47,10 +51,10 @@ class PolarsEngine(BaseEngine):
                         storage_options["aws_allow_http"] = "true"
                     if profile.endpoint_url:
                         storage_options["aws_endpoint"] = profile.endpoint_url
-            return pl.scan_parquet(file_path, storage_options=storage_options)
+            return pl.scan_parquet(file_path, storage_options=storage_options, hive_partitioning=True)
         else:
             posix_p = to_posix_path(file_path)
-            return pl.scan_parquet(posix_p)
+            return pl.scan_parquet(posix_p, hive_partitioning=True)
 
     def _build_lazy_plan(self, query: HyperQuery, file_path: str, count_only: bool = False) -> pl.LazyFrame:
         lf = self._scan_parquet(file_path, query.dataset)
@@ -194,19 +198,22 @@ class PolarsEngine(BaseEngine):
 
         # Path B: Canonical HyperQuery execution with streaming engine
         # 1. Total matching count
-        # Ultra-fast path: If local file and no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
-        if not file_path.startswith("s3://") and not query.filters and not query.groupBy:
+        # Ultra-fast path: If single local file and no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
+        total_rows = None
+        if not file_path.startswith("s3://") and "*" not in posix_p and not os.path.isdir(posix_p) and not query.filters and not query.groupBy:
             try:
                 import pyarrow.parquet as pq
                 total_rows = pq.ParquetFile(posix_p).metadata.num_rows
             except Exception:
-                total_rows = 0
-        else:
+                total_rows = None
+
+        if total_rows is None:
             count_lf = self._build_lazy_plan(query, file_path, count_only=True)
             try:
                 count_df = count_lf.collect()
                 total_rows = int(count_df["total_count"][0])
-            except Exception:
+            except Exception as e:
+                logger.error(f"Polars count query failed: {e}")
                 total_rows = 0
 
         # 2. Main data execution

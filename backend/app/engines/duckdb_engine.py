@@ -74,17 +74,18 @@ class DuckDBEngine(BaseEngine):
 
     def _compile_sql(self, query: HyperQuery, file_path: str, count_only: bool = False) -> str:
         posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
+        read_expr = f"read_parquet('{posix_p}', union_by_name=true, hive_partitioning=true)"
 
         if query.raw_sql:
-            sql = query.raw_sql.replace(":dataset", f"read_parquet('{posix_p}')")
-            if f"read_parquet('{posix_p}')" not in sql and query.dataset in sql:
-                sql = sql.replace(query.dataset, f"read_parquet('{posix_p}')")
+            sql = query.raw_sql.replace(":dataset", read_expr)
+            if read_expr not in sql and query.dataset in sql:
+                sql = sql.replace(query.dataset, read_expr)
             if count_only:
                 clean_sql = sql.rstrip("; \t\n")
                 return f"SELECT COUNT(*) FROM ({clean_sql}) AS _raw_count_subq"
             return sql
 
-        from_clause = f"read_parquet('{posix_p}')"
+        from_clause = read_expr
 
         # WHERE conditions
         where_clauses = []
@@ -195,35 +196,44 @@ class DuckDBEngine(BaseEngine):
         cat = catalog._read_catalog()
         for ds_id, meta in cat.items():
             p = meta.get("path")
-            if p and os.path.exists(p):
+            if p and (os.path.exists(p) or "*" in p or p.startswith("s3://")):
                 posix_p = to_posix_path(p)
-                cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW "{ds_id}" AS SELECT * FROM read_parquet(\'{posix_p}\');')
+                try:
+                    cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW "{ds_id}" AS SELECT * FROM read_parquet(\'{posix_p}\', union_by_name=true, hive_partitioning=true);')
+                except Exception as e:
+                    logger.debug(f"Could not create temporary view for {ds_id}: {e}")
 
         # Also register :dataset as an alias for the currently active dataset
-        if active_path and os.path.exists(active_path):
+        if active_path and (os.path.exists(active_path) or "*" in active_path or active_path.startswith("s3://")):
             posix_act = to_posix_path(active_path)
-            cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW ":dataset" AS SELECT * FROM read_parquet(\'{posix_act}\');')
+            try:
+                cursor.execute(f'CREATE OR REPLACE TEMPORARY VIEW ":dataset" AS SELECT * FROM read_parquet(\'{posix_act}\', union_by_name=true, hive_partitioning=true);')
+            except Exception as e:
+                logger.debug(f"Could not create temporary view for :dataset: {e}")
 
     def execute_query(self, query: HyperQuery, file_path: str) -> Tuple[pa.Table, str, int]:
         self._apply_s3_credentials(file_path, query.dataset)
         posix_p = file_path if file_path.startswith("s3://") else to_posix_path(file_path)
 
         # 1. Total matching rows count
-        # Ultra-fast path: If no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
-        if not file_path.startswith("s3://") and not query.filters and not query.raw_sql and not query.groupBy and not query.quick_search:
+        # Ultra-fast path: If single local file and no filters/grouping, read total rows from Parquet metadata in 0.001 ms!
+        total_rows = None
+        if not file_path.startswith("s3://") and "*" not in posix_p and not os.path.isdir(posix_p) and not query.filters and not query.raw_sql and not query.groupBy and not query.quick_search:
             try:
                 import pyarrow.parquet as pq
                 total_rows = pq.ParquetFile(posix_p).metadata.num_rows
             except Exception:
-                total_rows = 0
-        else:
+                total_rows = None
+
+        if total_rows is None:
             count_sql = self._compile_sql(query, file_path, count_only=True)
             count_cursor = self._con.cursor()
             try:
                 self._sync_catalog_views(count_cursor, query.dataset, file_path)
                 res_rows = count_cursor.sql(count_sql).fetchall()
                 total_rows = int(res_rows[0][0]) if res_rows and len(res_rows[0]) > 0 and res_rows[0][0] is not None else 0
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to execute count query: {e}")
                 total_rows = 0
             finally:
                 count_cursor.close()

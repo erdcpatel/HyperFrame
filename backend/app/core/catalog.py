@@ -387,34 +387,54 @@ class DatasetCatalog:
         local_glob_path = str(target_dir / pattern)
         posix_glob = to_posix_path(local_glob_path)
 
-        # Scan schema & row count using PyArrow on downloaded files
         downloaded_files = list(target_dir.rglob("*.parquet") if recursive_glob else target_dir.glob("*.parquet"))
         if not downloaded_files:
             raise ValueError(f"No parquet files were downloaded to {target_dir}")
 
+        total_size_bytes = sum(f.stat().st_size for f in downloaded_files)
+
+        # Unify schema & row count across all downloaded parquet files via DuckDB
         total_rows = 0
-        total_size_bytes = 0
-        sample_file = downloaded_files[0]
-        sample_pfile = pq.ParquetFile(str(sample_file))
-        schema_arrow = sample_pfile.schema_arrow
-
         columns = []
-        for field in schema_arrow:
-            columns.append(ColumnWeather(
-                name=field.name,
-                dtype=str(field.type),
-                null_count=0,
-                null_percentage=0.0,
-                approx_unique=0
-            ))
+        con = duckdb.connect()
+        try:
+            res_count = con.execute(f"SELECT COUNT(*) FROM read_parquet('{posix_glob}', union_by_name=true, hive_partitioning=true);").fetchone()
+            total_rows = int(res_count[0]) if res_count and res_count[0] is not None else 0
 
-        for f in downloaded_files:
-            try:
-                pf = pq.ParquetFile(str(f))
-                total_rows += pf.metadata.num_rows
-                total_size_bytes += f.stat().st_size
-            except Exception:
-                pass
+            desc = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{posix_glob}', union_by_name=true, hive_partitioning=true) LIMIT 0;").fetchall()
+            columns = [
+                ColumnWeather(
+                    name=r[0],
+                    dtype=r[1],
+                    null_count=0,
+                    null_percentage=0.0,
+                    approx_unique=0
+                )
+                for r in desc
+            ]
+        except Exception as e:
+            logger.warning(f"DuckDB schema extraction failed on {posix_glob}: {e}. Falling back to PyArrow.")
+            total_rows = 0
+            sample_file = downloaded_files[0]
+            sample_pfile = pq.ParquetFile(str(sample_file))
+            columns = [
+                ColumnWeather(
+                    name=field.name,
+                    dtype=str(field.type),
+                    null_count=0,
+                    null_percentage=0.0,
+                    approx_unique=0
+                )
+                for field in sample_pfile.schema_arrow
+            ]
+            for f in downloaded_files:
+                try:
+                    pf = pq.ParquetFile(str(f))
+                    total_rows += pf.metadata.num_rows
+                except Exception:
+                    pass
+        finally:
+            con.close()
 
         weather = DatasetWeather(
             dataset_id=dataset_id,
