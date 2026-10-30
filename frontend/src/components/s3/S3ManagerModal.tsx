@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   Search,
   ExternalLink,
-  ArrowLeft
+  ArrowLeft,
+  Edit2
 } from 'lucide-react';
 import { S3ProfilePublic, S3BrowseResponse, DatasetWeather } from '../../types';
 import {
@@ -58,8 +59,9 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; success: boolean; latency?: number; message: string } | null>(null);
 
-  // New Profile Form State
+  // New/Edit Profile Form State
   const [isAddingProfile, setIsAddingProfile] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState('');
   const [bucketName, setBucketName] = useState('');
   const [region, setRegion] = useState('us-east-1');
@@ -118,16 +120,29 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
     }
   };
 
+  const handleStartEdit = (p: S3ProfilePublic) => {
+    setEditingProfileId(p.id);
+    setProfileName(p.name);
+    setBucketName(p.bucket);
+    setRegion(p.region);
+    setEndpointUrl(p.endpoint_url || '');
+    setUseSsl(p.use_ssl !== false);
+    setAccessKey(p.access_key_masked);
+    setSecretKey('');
+    setFormError(null);
+    setIsAddingProfile(true);
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileName.trim() || !bucketName.trim() || !accessKey.trim() || !secretKey.trim()) {
-      setFormError('Please fill in Profile Name, Bucket, Access Key, and Secret Key.');
+    if (!profileName.trim() || !bucketName.trim()) {
+      setFormError('Please fill in Profile Name and S3 Bucket Name.');
       return;
     }
     setSavingProfile(true);
     setFormError(null);
     try {
-      const id = profileName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const id = editingProfileId || profileName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
       await saveS3Profile({
         id,
         name: profileName,
@@ -140,6 +155,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
       });
 
       setIsAddingProfile(false);
+      setEditingProfileId(null);
       setProfileName('');
       setBucketName('');
       setAccessKey('');
@@ -362,11 +378,14 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                   <div className="flex items-center justify-between pb-2 border-b border-[#1e293b]">
                     <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs">
                       <ShieldCheck className="w-4 h-4" />
-                      <span>New S3 Bucket Configuration</span>
+                      <span>{editingProfileId ? 'Edit S3 Bucket Configuration' : 'New S3 Bucket Configuration'}</span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setIsAddingProfile(false)}
+                      onClick={() => {
+                        setIsAddingProfile(false);
+                        setEditingProfileId(null);
+                      }}
                       className="text-slate-400 hover:text-slate-200 text-xs"
                     >
                       Cancel
@@ -444,10 +463,10 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 font-semibold block mb-1">AWS Secret Access Key *</label>
+                      <label className="text-slate-400 font-semibold block mb-1">AWS Secret Access Key</label>
                       <input
                         type="password"
-                        placeholder="Secret key... (or leave blank for IAM Role)"
+                        placeholder={editingProfileId ? 'Leave blank to preserve existing key...' : 'Secret key... (or leave blank for IAM)'}
                         value={secretKey}
                         onChange={(e) => setSecretKey(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
@@ -488,7 +507,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5"
                     >
                       {savingProfile && <RotateCw className="w-3.5 h-3.5 animate-spin" />}
-                      <span>Save S3 Configuration</span>
+                      <span>{editingProfileId ? 'Update S3 Configuration' : 'Save S3 Configuration'}</span>
                     </button>
                   </div>
                 </form>
@@ -543,6 +562,14 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleStartEdit(p)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#162035] hover:bg-[#1d2a45] text-slate-300 border border-[#24324f] text-xs font-medium transition-colors flex items-center gap-1.5"
+                        title="Edit bucket configuration, region, endpoint, or SSL"
+                      >
+                        <Edit2 className="w-3 h-3 text-sky-400" />
+                        <span>Edit</span>
+                      </button>
                       <button
                         onClick={() => handleTestProfile(p.id)}
                         disabled={testingId === p.id}

@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +11,8 @@ from backend.app.core.s3_manager import (
 from backend.app.core.catalog import catalog
 from backend.app.models.dataset import DatasetWeather
 from backend.app.utils.serialization import arrow_table_to_dict_list
+
+logger = logging.getLogger("hyperframe.api.s3")
 
 router = APIRouter(prefix="/api/s3", tags=["S3 Lakehouse"])
 
@@ -38,6 +41,7 @@ def save_s3_profile(profile: S3BucketProfile):
     """
     Save or update an S3 bucket configuration profile.
     """
+    logger.info(f"Saving S3 profile: {profile.id} ({profile.name})")
     return s3_manager.save_profile(profile)
 
 @router.delete("/profiles/{profile_id}")
@@ -48,6 +52,7 @@ def delete_s3_profile(profile_id: str):
     success = s3_manager.delete_profile(profile_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found.")
+    logger.info(f"Deleted S3 profile: {profile_id}")
     return {"status": "success", "message": f"Profile '{profile_id}' deleted."}
 
 @router.post("/profiles/{profile_id}/test")
@@ -57,7 +62,9 @@ def test_s3_connection(profile_id: str):
     """
     res = s3_manager.test_connection(profile_id)
     if not res.get("success"):
+        logger.error(f"[POST /api/s3/profiles/{profile_id}/test] S3 Connection Failed: {res.get('message')}")
         raise HTTPException(status_code=400, detail=res.get("message"))
+    logger.info(f"[POST /api/s3/profiles/{profile_id}/test] S3 Connection Success: {res.get('message')}")
     return res
 
 @router.get("/browse", response_model=S3BrowseResponse)
@@ -72,8 +79,11 @@ def browse_s3_folder(
     if not profile:
         raise HTTPException(status_code=404, detail=f"S3 Profile '{profile_id}' not found.")
     try:
-        return s3_manager.browse_folder(profile_id, prefix)
+        res = s3_manager.browse_folder(profile_id, prefix)
+        logger.info(f"Browsed s3://{profile.bucket}/{prefix}: {len(res.files)} files, {len(res.subfolders)} subfolders")
+        return res
     except Exception as e:
+        logger.error(f"S3 Browse Error on profile '{profile_id}', prefix '{prefix}': {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"S3 Browse Error: {str(e)}")
 
 @router.post("/preview")

@@ -77,15 +77,29 @@ def test_s3_test_connection_mock(tmp_path):
         assert res["bucket"] == "test-bucket"
         assert res["latency_ms"] >= 0
 
-        # Failure case with ClientError
+        # Failure case with ClientError (both HeadBucket and fallback ListObjects fail)
         mock_boto.head_bucket.side_effect = ClientError(
             {"Error": {"Code": "403", "Message": "Forbidden Access"}},
             "HeadBucket"
         )
+        mock_boto.list_objects_v2.side_effect = ClientError(
+            {"Error": {"Code": "403", "Message": "Forbidden Access"}},
+            "ListObjectsV2"
+        )
         res_fail = mgr.test_connection("test_conn")
         assert res_fail["success"] is False
-        assert res_fail["error_code"] == "403"
-        assert "Forbidden Access" in res_fail["message"]
+        assert "403" in res_fail["message"] or "Access denied" in res_fail["message"]
+
+        # Fallback success case: HeadBucket fails with 403 but ListObjectsV2 succeeds
+        mock_boto.head_bucket.side_effect = ClientError(
+            {"Error": {"Code": "403", "Message": "HeadBucket Denied"}},
+            "HeadBucket"
+        )
+        mock_boto.list_objects_v2.side_effect = None
+        mock_boto.list_objects_v2.return_value = {"Contents": []}
+        res_fallback = mgr.test_connection("test_conn")
+        assert res_fallback["success"] is True
+        assert "ListObjectsV2 verified access" in res_fallback["message"]
 
 def test_s3_browse_folder_mock(tmp_path):
     storage = tmp_path / "test_s3_profiles.json"
