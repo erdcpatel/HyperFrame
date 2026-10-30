@@ -422,4 +422,63 @@ class S3ProfilesManager:
             "file_count": len(parquet_keys)
         }
 
+    def download_folder_to_local(
+        self, profile_id: str, folder_prefix: str, dataset_id: str, recursive_glob: bool = True
+    ) -> Path:
+        """
+        Downloads all Parquet files in an S3 folder to a local directory:
+        backend/data/<dataset_id>/
+        Uses multi-threaded / sequential streaming with Boto3.
+        Returns the local directory path containing the downloaded parquet files.
+        """
+        profile = self.get_profile(profile_id)
+        if not profile:
+            raise ValueError(f"Profile '{profile_id}' not found.")
+
+        client = self.get_boto_client(profile)
+        clean_prefix = folder_prefix.strip().strip("/")
+        if clean_prefix and not clean_prefix.endswith("/"):
+            clean_prefix += "/"
+
+        # List all parquet files
+        paginator = client.get_paginator('list_objects_v2')
+        page_iterator = paginator.paginate(Bucket=profile.bucket, Prefix=clean_prefix)
+
+        parquet_keys = []
+        for page in page_iterator:
+            for obj in page.get('Contents', []):
+                key = obj.get('Key', '')
+                if any(key.lower().endswith(ext) for ext in ['.parquet', '.pqt']):
+                    if not recursive_glob:
+                        sub = key[len(clean_prefix):]
+                        if "/" in sub:
+                            continue
+                    parquet_keys.append(key)
+
+        if not parquet_keys:
+            raise ValueError(f"No Parquet files found in 's3://{profile.bucket}/{clean_prefix}' to download.")
+
+        # Local target directory
+        target_dir = settings.DATA_DIR / dataset_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Downloading {len(parquet_keys)} files from s3://{profile.bucket}/{clean_prefix} to {target_dir}...")
+        downloaded_count = 0
+        total_bytes = 0
+
+        for key in parquet_keys:
+            # Flatten or preserve relative path
+            rel_name = key[len(clean_prefix):] if clean_prefix else key
+            rel_name = rel_name.lstrip("/")
+            local_file = target_dir / rel_name
+            local_file.parent.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Downloading {key} -> {local_file}")
+            client.download_file(Bucket=profile.bucket, Key=key, Filename=str(local_file))
+            total_bytes += local_file.stat().st_size
+            downloaded_count += 1
+
+        logger.info(f"Successfully downloaded {downloaded_count} files ({format_bytes(total_bytes)}) to {target_dir}")
+        return target_dir
+
 s3_manager = S3ProfilesManager()

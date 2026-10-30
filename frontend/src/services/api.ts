@@ -268,3 +268,16 @@ export async function registerS3Dataset(req: { dataset_id: string; profile_id: s
   }
   return res.json();
 }
+
+export async function downloadS3Dataset(req: { dataset_id: string; profile_id: string; folder_prefix: string; recursive_glob?: boolean; description?: string }): Promise<DatasetWeather> {
+  const res = await fetch(`${BASE_URL}/api/s3/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to download and ingest S3 dataset');
+  }
+  return res.json();
+}

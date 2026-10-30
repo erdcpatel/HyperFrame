@@ -22,7 +22,9 @@ import {
   Edit2,
   X,
   FileCode,
-  Sparkles
+  Sparkles,
+  Download,
+  Zap
 } from 'lucide-react';
 import { S3ProfilePublic, S3BrowseResponse, DatasetWeather } from '../../types';
 import {
@@ -32,7 +34,8 @@ import {
   testS3Connection,
   browseS3Folder,
   previewS3Data,
-  registerS3Dataset
+  registerS3Dataset,
+  downloadS3Dataset
 } from '../../services/api';
 
 interface Props {
@@ -78,6 +81,8 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
   const [targetDatasetId, setTargetDatasetId] = useState('');
   const [recursiveGlob, setRecursiveGlob] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   // Load profiles on mount
   useEffect(() => {
@@ -250,6 +255,7 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
   const handleRegisterAndOpen = async () => {
     if (!selectedProfileId || !targetDatasetId.trim()) return;
     setRegistering(true);
+    setActionStatus('Registering remote S3 dataset...');
     try {
       const activeProf = profiles.find((p) => p.id === selectedProfileId);
       const newWeather = await registerS3Dataset({
@@ -264,6 +270,29 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
       alert(`Registration failed: ${err.message}`);
     } finally {
       setRegistering(false);
+      setActionStatus(null);
+    }
+  };
+
+  const handleDownloadAndIngest = async () => {
+    if (!selectedProfileId || !targetDatasetId.trim()) return;
+    setDownloading(true);
+    setActionStatus('Downloading parquet files via Boto3 to backend/data/...');
+    try {
+      const activeProf = profiles.find((p) => p.id === selectedProfileId);
+      const newWeather = await downloadS3Dataset({
+        dataset_id: targetDatasetId.trim(),
+        profile_id: selectedProfileId,
+        folder_prefix: currentPrefix,
+        recursive_glob: recursiveGlob,
+        description: `Downloaded from S3 '${activeProf?.bucket}/${currentPrefix}'`,
+      });
+      onDatasetRegistered(newWeather);
+    } catch (err: any) {
+      alert(`Download failed: ${err.message}`);
+    } finally {
+      setDownloading(false);
+      setActionStatus(null);
     }
   };
 
@@ -658,13 +687,26 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
                   />
                 </div>
 
+                {/* Primary Action 1: Download & Ingest to Local (Recommended) */}
+                <button
+                  onClick={handleDownloadAndIngest}
+                  disabled={downloading || registering || !targetDatasetId.trim()}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-950/40 disabled:opacity-50"
+                  title="Download Parquet files via Boto3 to local disk for 0ms latency and 100% offline access"
+                >
+                  {downloading ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  <span>Download & Ingest Local</span>
+                </button>
+
+                {/* Primary Action 2: Zero-Copy Remote Stream */}
                 <button
                   onClick={handleRegisterAndOpen}
-                  disabled={registering || !targetDatasetId.trim()}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950/40 disabled:opacity-50"
+                  disabled={registering || downloading || !targetDatasetId.trim()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#16223b] hover:bg-[#1d2d4f] border border-[#27385d] text-emerald-300 text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+                  title="Query directly over S3 range requests without downloading files"
                 >
-                  {registering ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
-                  <span>Register & Open in Studio</span>
+                  {registering ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-emerald-400" />}
+                  <span>Remote Stream (Zero-Copy)</span>
                 </button>
 
                 <button
@@ -675,6 +717,14 @@ export const S3ExplorerView: React.FC<Props> = ({ onDatasetRegistered, onNavigat
                 </button>
               </div>
             </div>
+
+            {/* Action Status Notice */}
+            {actionStatus && (
+              <div className="px-4 py-2 bg-blue-500/10 border-b border-blue-500/30 text-blue-300 text-xs flex items-center gap-2 font-mono">
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-blue-400 shrink-0" />
+                <span>{actionStatus}</span>
+              </div>
+            )}
 
             {/* Error Banner */}
             {previewError && (

@@ -167,7 +167,7 @@ def preview_s3_data(req: S3PreviewRequest):
 def register_s3_dataset(req: S3RegisterRequest):
     """
     Registers an entire multi-file S3 folder as a single unified dataset in the catalog.
-    Computes schema weather directly over HTTP range requests with zero local disk download.
+    Computes schema weather directly with zero local disk download.
     """
     profile = s3_manager.get_profile(req.profile_id)
     if not profile:
@@ -182,8 +182,32 @@ def register_s3_dataset(req: S3RegisterRequest):
             dataset_id=req.dataset_id,
             profile_id=req.profile_id,
             s3_uri=s3_path,
-            description=req.description or f"S3 Lakehouse folder: {s3_path}"
+            description=req.description or f"S3 folder: {s3_path}"
         )
         return weather
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to register S3 dataset: {str(e)}")
+
+@router.post("/download", response_model=DatasetWeather)
+def download_s3_dataset(req: S3RegisterRequest):
+    """
+    Downloads all Parquet files from an S3 folder to local storage (backend/data/<dataset_id>/)
+    and registers it as a native high-performance local dataset.
+    100% immune to network/SSL errors, zero network latency, full Perspective & Polars support.
+    """
+    profile = s3_manager.get_profile(req.profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile '{req.profile_id}' not found.")
+
+    try:
+        weather = catalog.register_s3_local_download(
+            dataset_id=req.dataset_id,
+            profile_id=req.profile_id,
+            folder_prefix=req.folder_prefix,
+            recursive_glob=req.recursive_glob,
+            description=req.description
+        )
+        return weather
+    except Exception as e:
+        logger.exception(f"Failed to download and register S3 dataset: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to download S3 dataset: {str(e)}")

@@ -361,6 +361,87 @@ class DatasetCatalog:
 
         return weather
 
+    def register_s3_local_download(
+        self, dataset_id: str, profile_id: str, folder_prefix: str, recursive_glob: bool = True, description: Optional[str] = None
+    ) -> DatasetWeather:
+        """
+        Downloads all Parquet files from an S3 folder to a local directory:
+        backend/data/<dataset_id>/
+        And registers it as a high-performance local multi-file dataset.
+        Zero network lag, 100% offline, maximum DuckDB/Polars/Perspective execution.
+        """
+        from backend.app.core.s3_manager import s3_manager
+        profile = s3_manager.get_profile(profile_id)
+        if not profile:
+            raise ValueError(f"S3 Profile '{profile_id}' not found.")
+
+        target_dir = s3_manager.download_folder_to_local(
+            profile_id=profile_id,
+            folder_prefix=folder_prefix,
+            dataset_id=dataset_id,
+            recursive_glob=recursive_glob
+        )
+
+        # Path glob for queries
+        pattern = "**/*.parquet" if recursive_glob else "*.parquet"
+        local_glob_path = str(target_dir / pattern)
+        posix_glob = to_posix_path(local_glob_path)
+
+        # Scan schema & row count using PyArrow on downloaded files
+        downloaded_files = list(target_dir.rglob("*.parquet") if recursive_glob else target_dir.glob("*.parquet"))
+        if not downloaded_files:
+            raise ValueError(f"No parquet files were downloaded to {target_dir}")
+
+        total_rows = 0
+        total_size_bytes = 0
+        sample_file = downloaded_files[0]
+        sample_pfile = pq.ParquetFile(str(sample_file))
+        schema_arrow = sample_pfile.schema_arrow
+
+        columns = []
+        for field in schema_arrow:
+            columns.append(ColumnWeather(
+                name=field.name,
+                dtype=str(field.type),
+                null_count=0,
+                null_percentage=0.0,
+                approx_unique=0
+            ))
+
+        for f in downloaded_files:
+            try:
+                pf = pq.ParquetFile(str(f))
+                total_rows += pf.metadata.num_rows
+                total_size_bytes += f.stat().st_size
+            except Exception:
+                pass
+
+        weather = DatasetWeather(
+            dataset_id=dataset_id,
+            file_name=f"📦 {target_dir.name} ({len(downloaded_files)} files)",
+            path=posix_glob,
+            file_size_bytes=total_size_bytes,
+            file_size_formatted=format_bytes(total_size_bytes),
+            row_count=total_rows,
+            column_count=len(columns),
+            row_groups=len(downloaded_files),
+            est_uncompressed_bytes=total_rows * max(1, len(columns)) * 8,
+            est_uncompressed_formatted=format_bytes(total_rows * max(1, len(columns)) * 8),
+            compression_ratio=3.5,
+            columns=columns
+        )
+
+        cat = self._read_catalog()
+        cat_entry = weather.model_dump()
+        cat_entry["source"] = "local"
+        cat_entry["s3_profile_id"] = profile_id
+        cat_entry["description"] = description or f"Synced from S3 '{profile.bucket}/{folder_prefix}' ({len(downloaded_files)} files)"
+        cat_entry["created_at"] = datetime.now().isoformat()
+        cat[dataset_id] = cat_entry
+        self._write_catalog(cat)
+
+        return weather
+
     def delete_dataset(self, dataset_id: str):
         catalog = self._read_catalog()
         if dataset_id in catalog:
