@@ -102,3 +102,35 @@ def test_polars_raw_sql_execution(sample_dataset):
     assert "symbol" in table.column_names
     assert "cnt" in table.column_names
     assert "total_val" in table.column_names
+
+def test_polars_duplicate_columns_and_alias_collision(sample_dataset):
+    engine = PolarsEngine()
+
+    # 1. Duplicate columns in select list
+    q_sel = HyperQuery(
+        dataset="test_polars_sample",
+        engine="polars",
+        select=["trade_id", "trade_id", "symbol", "trade_id"],
+        limit=5
+    )
+    tbl, _, _ = engine.execute_query(q_sel, sample_dataset)
+    assert tbl.num_rows > 0
+    assert "trade_id" in tbl.column_names
+    assert "symbol" in tbl.column_names
+
+    # 2. Aggregation alias collision with group_by column name
+    q_agg = HyperQuery(
+        dataset="test_polars_sample",
+        engine="polars",
+        groupBy=["symbol", "symbol"],  # Duplicate group by
+        aggregations=[
+            HyperAggregation(column="price", function="sum", alias="symbol"),  # Alias clashes with groupBy
+            HyperAggregation(column="notional", function="sum", alias="symbol")  # Duplicate alias
+        ],
+        limit=5
+    )
+    tbl_agg, _, _ = engine.execute_query(q_agg, sample_dataset)
+    assert tbl_agg.num_rows > 0
+    assert "symbol" in tbl_agg.column_names
+    assert "symbol_1" in tbl_agg.column_names
+    assert "symbol_2" in tbl_agg.column_names

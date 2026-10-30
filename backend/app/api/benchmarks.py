@@ -107,6 +107,24 @@ def _build_workload_specs(dataset_id: str, weather):
     sorted_by_card = sorted(weather.columns, key=lambda c: getattr(c, "approx_unique", 0), reverse=True)
     high_card_col = sorted_by_card[0].name if sorted_by_card else id_col
 
+    # Construct strictly unique projection list (prevents Polars DuplicateError on datasets with overlapping roles)
+    distinct_select: list[str] = []
+    for c_candidate in [id_col, sym_col, num_col]:
+        if c_candidate and c_candidate not in distinct_select:
+            distinct_select.append(c_candidate)
+    for col in weather.columns:
+        if len(distinct_select) >= 3 or len(distinct_select) >= len(weather.columns):
+            break
+        if col.name not in distinct_select:
+            distinct_select.append(col.name)
+
+    # Prevent alias collisions with group-by columns
+    w3_total_alias = "total_val" if sym_col != "total_val" else "sum_metric"
+    w3_count_alias = "row_count" if sym_col != "row_count" else "count_total"
+
+    w4_total_alias = "total_val" if high_card_col != "total_val" else "sum_metric"
+    w4_count_alias = "row_count" if high_card_col != "row_count" else "count_total"
+
     return [
         {
             "id": "workload_1_needle",
@@ -114,7 +132,7 @@ def _build_workload_specs(dataset_id: str, weather):
             "description": f"Filtered scan on {sym_col} with projection",
             "query": HyperQuery(
                 dataset=dataset_id,
-                select=[id_col, sym_col, num_col],
+                select=distinct_select,
                 filters=[HyperFilter(column=sym_col, operator="contains", value=needle_val)],
                 limit=100
             )
@@ -125,7 +143,7 @@ def _build_workload_specs(dataset_id: str, weather):
             "description": f"Global sort on {num_col} DESC",
             "query": HyperQuery(
                 dataset=dataset_id,
-                select=[id_col, sym_col, num_col],
+                select=distinct_select,
                 orderBy=[HyperSort(column=num_col, direction="desc")],
                 limit=200
             )
@@ -138,10 +156,10 @@ def _build_workload_specs(dataset_id: str, weather):
                 dataset=dataset_id,
                 groupBy=[sym_col],
                 aggregations=[
-                    HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
-                    HyperAggregation(column=id_col, function="count", alias="row_count")
+                    HyperAggregation(column=num_col, function=agg_func, alias=w3_total_alias),
+                    HyperAggregation(column=id_col, function="count", alias=w3_count_alias)
                 ],
-                orderBy=[HyperSort(column="total_val", direction="desc")],
+                orderBy=[HyperSort(column=w3_total_alias, direction="desc")],
                 limit=50
             )
         },
@@ -153,8 +171,8 @@ def _build_workload_specs(dataset_id: str, weather):
                 dataset=dataset_id,
                 groupBy=[high_card_col],
                 aggregations=[
-                    HyperAggregation(column=num_col, function=agg_func, alias="total_val"),
-                    HyperAggregation(column=id_col, function="count", alias="row_count")
+                    HyperAggregation(column=num_col, function=agg_func, alias=w4_total_alias),
+                    HyperAggregation(column=id_col, function="count", alias=w4_count_alias)
                 ],
                 limit=200
             )
@@ -165,7 +183,7 @@ def _build_workload_specs(dataset_id: str, weather):
             "description": "Sequential paginated fetches (offset 0 -> 400)",
             "query": HyperQuery(
                 dataset=dataset_id,
-                select=[id_col, sym_col, num_col],
+                select=distinct_select,
                 limit=100,
                 offset=400
             )

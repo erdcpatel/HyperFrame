@@ -107,9 +107,24 @@ class PolarsEngine(BaseEngine):
 
         # Aggregations / Group By
         if query.aggregations:
+            # Deduplicate group_by column names
+            if query.groupBy:
+                seen_grp = set()
+                unique_group_by = [c for c in query.groupBy if not (c in seen_grp or seen_grp.add(c))]
+            else:
+                unique_group_by = []
+
+            used_aliases = set(unique_group_by)
             agg_exprs = []
             for agg in query.aggregations:
-                alias = agg.alias or f"{agg.function}_{agg.column}"
+                base_alias = agg.alias or f"{agg.function}_{agg.column}"
+                alias = base_alias
+                counter = 1
+                while alias in used_aliases:
+                    alias = f"{base_alias}_{counter}"
+                    counter += 1
+                used_aliases.add(alias)
+
                 c = pl.col(agg.column)
                 if agg.function == "sum":
                     agg_exprs.append(c.sum().alias(alias))
@@ -124,13 +139,15 @@ class PolarsEngine(BaseEngine):
                 elif agg.function == "approx_count_distinct":
                     agg_exprs.append(c.n_unique().alias(alias))
 
-            if query.groupBy:
-                lf = lf.group_by(query.groupBy).agg(agg_exprs)
+            if unique_group_by:
+                lf = lf.group_by(unique_group_by).agg(agg_exprs)
             else:
                 lf = lf.select(agg_exprs)
         elif query.select:
-            # Projection pushdown
-            lf = lf.select([pl.col(c) for c in query.select])
+            # Deduplicate select column names while preserving order
+            seen_sel = set()
+            unique_select = [c for c in query.select if not (c in seen_sel or seen_sel.add(c))]
+            lf = lf.select([pl.col(c) for c in unique_select])
 
         # Sort
         if query.orderBy:
