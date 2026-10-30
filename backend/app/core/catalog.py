@@ -199,7 +199,11 @@ class DatasetCatalog:
                         else:
                             con.execute("SET s3_use_ssl = true;")
                         if prof.endpoint_url:
-                            con.execute(f"SET s3_endpoint = '{prof.endpoint_url}';")
+                            ep = prof.endpoint_url.strip()
+                            if "://" in ep:
+                                ep = ep.split("://", 1)[1]
+                            ep = ep.rstrip("/")
+                            con.execute(f"SET s3_endpoint = '{ep}';")
                             con.execute("SET s3_url_style = 'path';")
 
                 # For remote S3 tables over 100k rows, sample 100,000 to keep weather computation instantaneous
@@ -273,7 +277,11 @@ class DatasetCatalog:
             else:
                 con.execute("SET s3_use_ssl = true;")
             if profile.endpoint_url:
-                con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
+                ep = profile.endpoint_url.strip()
+                if "://" in ep:
+                    ep = ep.split("://", 1)[1]
+                ep = ep.rstrip("/")
+                con.execute(f"SET s3_endpoint = '{ep}';")
                 con.execute("SET s3_url_style = 'path';")
 
             # 1. Row count & Columns via DuckDB DESCRIBE

@@ -113,7 +113,7 @@ def test_s3_profile_iam_role_fallback(tmp_path):
         secret_access_key=""
     )
     saved = mgr.save_profile(iam_profile)
-    assert saved.access_key_masked == "AWS IAM / Default Credential Chain"
+    assert saved.access_key_masked == "None"
     
     # Verify boto client is created without explicit keys
     with patch("backend.app.core.s3_manager.boto3.client") as mock_boto:

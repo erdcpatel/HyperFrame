@@ -111,7 +111,11 @@ def preview_s3_data(req: S3PreviewRequest):
         else:
             con.execute("SET s3_use_ssl = true;")
         if profile.endpoint_url:
-            con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
+            ep = profile.endpoint_url.strip()
+            if "://" in ep:
+                ep = ep.split("://", 1)[1]
+            ep = ep.rstrip("/")
+            con.execute(f"SET s3_endpoint = '{ep}';")
             con.execute("SET s3_url_style = 'path';")
 
         t0 = time.time()

@@ -86,7 +86,7 @@ export const Sidebar: React.FC<Props> = ({
               <button
                 onClick={onOpenS3Modal}
                 className="p-1 hover:bg-[#1a233a] rounded text-slate-400 hover:text-amber-400 transition-colors"
-                title="Connect & Browse AWS S3 Buckets / Folders"
+                title="Connect & Browse S3 Buckets / Folders"
               >
                 <Cloud className="w-3.5 h-3.5 text-amber-400" />
               </button>
@@ -166,10 +166,10 @@ export const Sidebar: React.FC<Props> = ({
             <button
               onClick={onOpenS3Modal}
               className="text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
-              title="Connect and ingest from AWS S3 Lakehouse"
+              title="Connect and ingest from S3 Lakehouse"
             >
               <Cloud className="w-3 h-3" />
-              <span>S3 Cloud</span>
+              <span>S3 Lakehouse</span>
             </button>
           )}
 

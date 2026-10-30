@@ -19,21 +19,21 @@ class S3BucketProfile(BaseModel):
     id: str
     name: str
     bucket: str
-    region: str = "us-east-1"
+    endpoint_url: Optional[str] = None
     access_key_id: Optional[str] = ""
     secret_access_key: Optional[str] = ""
-    endpoint_url: Optional[str] = None
     use_ssl: bool = True
+    region: str = "us-east-1"
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
 class S3ProfilePublic(BaseModel):
     id: str
     name: str
     bucket: str
-    region: str
     access_key_masked: str
     endpoint_url: Optional[str] = None
     use_ssl: bool = True
+    region: Optional[str] = "us-east-1"
     created_at: str
     status: Optional[str] = "configured"  # "connected" | "error" | "configured"
     latency_ms: Optional[float] = None
@@ -60,8 +60,8 @@ class S3BrowseResponse(BaseModel):
     has_more: bool = False
 
 def mask_key(key: str) -> str:
-    if not key or key in ["IAM_ROLE", "DEFAULT"]:
-        return "AWS IAM / Default Credential Chain"
+    if not key or key in ["IAM_ROLE", "DEFAULT", "ANONYMOUS"]:
+        return "None"
     if len(key) <= 8:
         return "••••••••"
     return f"{key[:4]}••••••••{key[-4:]}"
@@ -114,6 +114,10 @@ class S3ProfilesManager:
         raw = self._read_profiles()
         existing = raw.get(profile.id)
         dump = profile.model_dump()
+        if dump.get("endpoint_url"):
+            dump["endpoint_url"] = dump["endpoint_url"].strip()
+        if not dump.get("region"):
+            dump["region"] = "us-east-1"
         if existing:
             # If editing and keys are left blank or placeholder, preserve existing credentials
             if not profile.secret_access_key or "••••" in profile.secret_access_key:
@@ -122,12 +126,12 @@ class S3ProfilesManager:
                 dump["access_key_id"] = existing.get("access_key_id", "")
         raw[profile.id] = dump
         self._write_profiles(raw)
-        logger.info(f"S3 Profile '{profile.id}' saved successfully (bucket='{dump.get('bucket')}', region='{dump.get('region')}', use_ssl={dump.get('use_ssl')})")
+        logger.info(f"S3 Profile '{profile.id}' saved successfully (bucket='{dump.get('bucket')}', endpoint='{dump.get('endpoint_url')}', use_ssl={dump.get('use_ssl')})")
         return S3ProfilePublic(
             id=profile.id,
             name=dump["name"],
             bucket=dump["bucket"],
-            region=dump["region"],
+            region=dump.get("region", "us-east-1"),
             access_key_masked=mask_key(dump.get("access_key_id", "")),
             endpoint_url=dump.get("endpoint_url"),
             use_ssl=dump.get("use_ssl", True),
@@ -146,21 +150,32 @@ class S3ProfilesManager:
 
     def get_boto_client(self, profile: S3BucketProfile) -> Any:
         cfg = Config(
-            region_name=profile.region,
-            s3={'addressing_style': 'path' if profile.endpoint_url else 'auto'},
+            region_name=profile.region or "us-east-1",
+            s3={'addressing_style': 'path'},
             retries={'max_attempts': 3, 'mode': 'standard'},
             connect_timeout=5,
             read_timeout=15
         )
         kwargs: dict[str, Any] = {
             'service_name': 's3',
-            'region_name': profile.region,
-            'endpoint_url': profile.endpoint_url,
-            'use_ssl': profile.use_ssl,
+            'region_name': profile.region or "us-east-1",
             'config': cfg
         }
-        # If explicit credentials provided, pass them; otherwise boto3 uses IAM Role / Default Credential Chain
-        if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT"]:
+        if profile.endpoint_url:
+            kwargs['endpoint_url'] = profile.endpoint_url.strip()
+
+        # SSL handling: if use_ssl is False, disable SSL cert verification (verify=False)
+        # which works with both self-signed HTTPS and plain HTTP
+        if not profile.use_ssl:
+            kwargs['verify'] = False
+            if profile.endpoint_url and profile.endpoint_url.strip().startswith("http://"):
+                kwargs['use_ssl'] = False
+        else:
+            kwargs['verify'] = True
+            kwargs['use_ssl'] = True
+
+        # Pass credentials if provided
+        if profile.access_key_id and profile.secret_access_key and profile.access_key_id not in ["IAM_ROLE", "DEFAULT", "ANONYMOUS"]:
             kwargs['aws_access_key_id'] = profile.access_key_id
             kwargs['aws_secret_access_key'] = profile.secret_access_key
 
@@ -174,7 +189,7 @@ class S3ProfilesManager:
 
         logger.info(
             f"Testing S3 Connection for Profile '{profile.id}' -> Bucket: '{profile.bucket}', "
-            f"Region: '{profile.region}', SSL: {profile.use_ssl}, Endpoint: '{profile.endpoint_url or 'AWS S3 Default'}'"
+            f"SSL: {profile.use_ssl}, Endpoint: '{profile.endpoint_url or 'Default'}'"
         )
         client = self.get_boto_client(profile)
         t0 = time.time()
@@ -182,7 +197,7 @@ class S3ProfilesManager:
             # 1. Primary check: HeadBucket
             client.head_bucket(Bucket=profile.bucket)
             latency = (time.time() - t0) * 1000
-            auth_type = "IAM / Default Chain" if not profile.access_key_id or profile.access_key_id in ["IAM_ROLE", "DEFAULT"] else "Access Key"
+            auth_type = "Credentials provided" if profile.access_key_id else "Default / Anonymous"
             logger.info(f"S3 Connection Succeeded for bucket '{profile.bucket}' in {latency:.1f}ms ({auth_type})")
             return {
                 "success": True,
@@ -190,37 +205,19 @@ class S3ProfilesManager:
                 "bucket": profile.bucket,
                 "latency_ms": round(latency, 1),
                 "auth_type": auth_type,
-                "message": f"Successfully connected to bucket '{profile.bucket}' in {latency:.1f}ms ({auth_type})."
+                "message": f"Successfully connected to bucket '{profile.bucket}' in {latency:.1f}ms."
             }
         except ClientError as e:
             error_code = str(e.response.get("Error", {}).get("Code", "Unknown"))
             error_msg = str(e.response.get("Error", {}).get("Message", str(e)))
             headers = e.response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
-            actual_region = headers.get("x-amz-bucket-region")
 
             logger.error(
-                f"[S3 Connection Failed] Bucket: '{profile.bucket}', Region: '{profile.region}', "
-                f"Error Code: {error_code}, Message: {error_msg}, AWS Headers: {headers}"
+                f"[S3 Connection Failed] Bucket: '{profile.bucket}', Endpoint: '{profile.endpoint_url}', "
+                f"Error Code: {error_code}, Message: {error_msg}, Headers: {headers}"
             )
 
-            # Check for AWS Region Mismatch in S3 response headers
-            if actual_region and actual_region != profile.region:
-                diagnostic = (
-                    f"AWS Region Mismatch: S3 bucket '{profile.bucket}' is located in '{actual_region}', "
-                    f"but this profile is configured for '{profile.region}'. "
-                    f"Please edit this connection and set Region to '{actual_region}'."
-                )
-                logger.warning(f"[S3 Region Mismatch] {diagnostic}")
-                return {
-                    "success": False,
-                    "profile_id": profile.id,
-                    "bucket": profile.bucket,
-                    "error_code": "RegionMismatch",
-                    "actual_region": actual_region,
-                    "message": diagnostic
-                }
-
-            # If HeadBucket returns 403 Forbidden, test fallback to ListObjectsV2 (some IAM policies block HeadBucket)
+            # If HeadBucket returns 403 Forbidden, test fallback to ListObjectsV2
             if error_code in ["403", "AccessDenied", "Forbidden"]:
                 try:
                     logger.info(f"Attempting ListObjectsV2 fallback probe on '{profile.bucket}'...")
@@ -234,28 +231,17 @@ class S3ProfilesManager:
                         "latency_ms": round(latency, 1),
                         "message": f"Connected to '{profile.bucket}' (HeadBucket returned 403, but ListObjectsV2 verified access)."
                     }
-                except ClientError as list_err:
-                    list_headers = list_err.response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
-                    list_region = list_headers.get("x-amz-bucket-region")
-                    if list_region and list_region != profile.region:
-                        return {
-                            "success": False,
-                            "profile_id": profile.id,
-                            "bucket": profile.bucket,
-                            "error_code": "RegionMismatch",
-                            "actual_region": list_region,
-                            "message": f"Region Mismatch: Bucket '{profile.bucket}' is located in '{list_region}'. Please edit profile region to '{list_region}'."
-                        }
+                except ClientError:
+                    pass
 
-            # Detailed actionable 403 diagnosis
+            # Actionable on-prem S3 diagnostic advice
             if error_code in ["403", "AccessDenied", "Forbidden"]:
                 advice = (
-                    f"S3 Connection Error [403 Forbidden]: Access denied to bucket '{profile.bucket}'. "
-                    f"Common causes:\n"
-                    f"1. Wrong AWS Region (bucket is in another region; verify in AWS S3 Console).\n"
-                    f"2. Invalid or expired Access Key / Secret Key.\n"
-                    f"3. IAM policy missing 's3:ListBucket' permission on 'arn:aws:s3:::{profile.bucket}'.\n"
-                    f"4. Bucket Policy or VPC endpoint restricting IP address or authentication."
+                    f"S3 Access Denied (403 Forbidden) for bucket '{profile.bucket}'.\n"
+                    f"Please check:\n"
+                    f"1. Access Key ID and Secret Access Key.\n"
+                    f"2. Endpoint URL ('{profile.endpoint_url}') and SSL mode (SSL: {profile.use_ssl}).\n"
+                    f"3. Verify bucket '{profile.bucket}' exists on the S3 server and permissions are granted."
                 )
                 return {
                     "success": False,

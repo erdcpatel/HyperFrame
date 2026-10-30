@@ -61,7 +61,11 @@ class DuckDBEngine(BaseEngine):
                     else:
                         self._con.execute("SET s3_use_ssl = true;")
                     if profile.endpoint_url:
-                        self._con.execute(f"SET s3_endpoint = '{profile.endpoint_url}';")
+                        ep = profile.endpoint_url.strip()
+                        if "://" in ep:
+                            ep = ep.split("://", 1)[1]
+                        ep = ep.rstrip("/")
+                        self._con.execute(f"SET s3_endpoint = '{ep}';")
                         self._con.execute("SET s3_url_style = 'path';")
 
     def _compile_sql(self, query: HyperQuery, file_path: str, count_only: bool = False) -> str:

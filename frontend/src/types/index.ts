@@ -164,7 +164,7 @@ export interface S3ProfilePublic {
   id: string;
   name: string;
   bucket: string;
-  region: string;
+  region?: string;
   access_key_masked: string;
   endpoint_url?: string;
   use_ssl?: boolean;

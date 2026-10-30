@@ -38,18 +38,6 @@ interface Props {
   onDatasetRegistered: (weather: DatasetWeather) => void;
 }
 
-const AWS_REGIONS = [
-  'us-east-1',
-  'us-east-2',
-  'us-west-1',
-  'us-west-2',
-  'eu-west-1',
-  'eu-central-1',
-  'ap-southeast-1',
-  'ap-northeast-1',
-  'sa-east-1'
-];
-
 export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegistered }) => {
   const [activeTab, setActiveTab] = useState<'profiles' | 'browser' | 'preview'>('profiles');
 
@@ -64,7 +52,6 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState('');
   const [bucketName, setBucketName] = useState('');
-  const [region, setRegion] = useState('us-east-1');
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [endpointUrl, setEndpointUrl] = useState('');
@@ -124,10 +111,9 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
     setEditingProfileId(p.id);
     setProfileName(p.name);
     setBucketName(p.bucket);
-    setRegion(p.region);
     setEndpointUrl(p.endpoint_url || '');
     setUseSsl(p.use_ssl !== false);
-    setAccessKey(p.access_key_masked);
+    setAccessKey(p.access_key_masked === 'None' ? '' : p.access_key_masked);
     setSecretKey('');
     setFormError(null);
     setIsAddingProfile(true);
@@ -136,7 +122,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileName.trim() || !bucketName.trim()) {
-      setFormError('Please fill in Profile Name and S3 Bucket Name.');
+      setFormError('Please fill in Connection Name and Bucket Name.');
       return;
     }
     setSavingProfile(true);
@@ -145,13 +131,13 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
       const id = editingProfileId || profileName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
       await saveS3Profile({
         id,
-        name: profileName,
+        name: profileName.trim(),
         bucket: bucketName.trim(),
-        region,
+        endpoint_url: endpointUrl.trim() || undefined,
         access_key_id: accessKey.trim(),
         secret_access_key: secretKey.trim(),
-        endpoint_url: endpointUrl.trim() || undefined,
         use_ssl: useSsl,
+        region: 'us-east-1',
       });
 
       setIsAddingProfile(false);
@@ -359,7 +345,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-200">Configured S3 Buckets</h3>
-                  <p className="text-xs text-slate-400">Manage credentials and regions for your AWS S3 data lakes.</p>
+                  <p className="text-xs text-slate-400">Manage S3 storage connections and bucket endpoints.</p>
                 </div>
                 {!isAddingProfile && (
                   <button
@@ -367,7 +353,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-md shadow-blue-950/40"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add S3 Bucket Profile</span>
+                    <span>Add S3 Bucket Connection</span>
                   </button>
                 )}
               </div>
@@ -378,7 +364,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                   <div className="flex items-center justify-between pb-2 border-b border-[#1e293b]">
                     <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs">
                       <ShieldCheck className="w-4 h-4" />
-                      <span>{editingProfileId ? 'Edit S3 Bucket Configuration' : 'New S3 Bucket Configuration'}</span>
+                      <span>{editingProfileId ? 'Edit S3 Connection' : 'New S3 Connection'}</span>
                     </div>
                     <button
                       type="button"
@@ -401,87 +387,65 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
 
                   <div className="grid grid-cols-2 gap-4 text-xs font-mono">
                     <div>
-                      <label className="text-slate-400 font-semibold block mb-1">Profile Name *</label>
+                      <label className="text-slate-400 font-semibold block mb-1">Connection Name *</label>
                       <input
                         type="text"
-                        placeholder="e.g. Production Lakehouse"
+                        placeholder="e.g. On-Prem MinIO"
                         value={profileName}
                         onChange={(e) => setProfileName(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 font-semibold block mb-1">S3 Bucket Name *</label>
+                      <label className="text-slate-400 font-semibold block mb-1">Bucket Name *</label>
                       <input
                         type="text"
-                        placeholder="e.g. us-equities-archive-2026"
+                        placeholder="e.g. market-data"
                         value={bucketName}
                         onChange={(e) => setBucketName(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
-                    <div>
-                      <label className="text-slate-400 font-semibold block mb-1">AWS Region *</label>
-                      <select
-                        value={region}
-                        onChange={(e) => setRegion(e.target.value)}
-                        className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500 cursor-pointer"
-                      >
-                        {AWS_REGIONS.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 font-semibold block mb-1">Custom Endpoint URL (Optional)</label>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 font-semibold block mb-1">Endpoint URL</label>
                       <input
                         type="text"
-                        placeholder="e.g. localhost:9000, http://minio:9000"
+                        placeholder="e.g. https://192.168.1.100:9000 or http://localhost:9000"
                         value={endpointUrl}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEndpointUrl(val);
-                          if (val.startsWith('http://')) {
-                            setUseSsl(false);
-                          } else if (val.startsWith('https://')) {
-                            setUseSsl(true);
-                          }
-                        }}
+                        onChange={(e) => setEndpointUrl(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 font-semibold block mb-1">AWS Access Key ID *</label>
+                      <label className="text-slate-400 font-semibold block mb-1">Access Key ID</label>
                       <input
                         type="text"
-                        placeholder="AKIA... (or leave blank for IAM Role)"
+                        placeholder="Key ID / Username (e.g. minioadmin)"
                         value={accessKey}
                         onChange={(e) => setAccessKey(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 font-semibold block mb-1">AWS Secret Access Key</label>
+                      <label className="text-slate-400 font-semibold block mb-1">Secret Access Key</label>
                       <input
                         type="password"
-                        placeholder={editingProfileId ? 'Leave blank to preserve existing key...' : 'Secret key... (or leave blank for IAM)'}
+                        placeholder={editingProfileId ? 'Leave blank to preserve existing key...' : 'Secret Key / Password'}
                         value={secretKey}
                         onChange={(e) => setSecretKey(e.target.value)}
                         className="w-full bg-[#0b101f] border border-[#24324f] rounded-lg p-2 text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
 
-                    {/* SSL / HTTPS Toggle */}
+                    {/* SSL / TLS Verification Toggle */}
                     <div className="col-span-2 flex items-center justify-between p-3 rounded-lg bg-[#0b101f] border border-[#24324f]">
                       <div className="flex flex-col">
                         <span className="text-slate-200 font-semibold text-xs flex items-center gap-1.5">
                           <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                          SSL / HTTPS Encryption
+                          SSL Verification (verify)
                         </span>
                         <span className="text-[11px] text-slate-400 font-sans">
-                          Mark <b>False (Insecure HTTP)</b> for local MinIO / Ceph endpoints running on plain HTTP (e.g. <code className="text-amber-400">http://localhost:9000</code>).
+                          Toggle <b>False</b> for self-signed certificates (<code className="text-sky-300">verify=False</code>) or plain HTTP on-prem clusters.
                         </span>
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -494,7 +458,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                         <span className={`text-xs font-mono font-semibold px-2 py-0.5 rounded border ${
                           useSsl ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                         }`}>
-                          {useSsl ? 'SSL: True (HTTPS)' : 'SSL: False (HTTP)'}
+                          {useSsl ? 'SSL: True (Verified)' : 'SSL: False (verify=False)'}
                         </span>
                       </label>
                     </div>
@@ -507,7 +471,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5"
                     >
                       {savingProfile && <RotateCw className="w-3.5 h-3.5 animate-spin" />}
-                      <span>{editingProfileId ? 'Update S3 Configuration' : 'Save S3 Configuration'}</span>
+                      <span>{editingProfileId ? 'Update Connection' : 'Save Connection'}</span>
                     </button>
                   </div>
                 </form>
@@ -534,14 +498,18 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                           <span className="text-[10px] font-mono bg-[#162138] text-slate-300 px-2 py-0.5 rounded border border-[#24324f]">
                             s3://{p.bucket}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400">({p.region})</span>
+                          {p.endpoint_url && (
+                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/30 border border-cyan-800/40 px-1.5 py-0.5 rounded">
+                              {p.endpoint_url}
+                            </span>
+                          )}
                           {p.use_ssl === false ? (
                             <span className="text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-semibold">
-                              HTTP (SSL False)
+                              verify=False
                             </span>
                           ) : (
                             <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-semibold">
-                              HTTPS
+                              SSL: True
                             </span>
                           )}
                         </div>
@@ -565,7 +533,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                       <button
                         onClick={() => handleStartEdit(p)}
                         className="px-2.5 py-1.5 rounded-lg bg-[#162035] hover:bg-[#1d2a45] text-slate-300 border border-[#24324f] text-xs font-medium transition-colors flex items-center gap-1.5"
-                        title="Edit bucket configuration, region, endpoint, or SSL"
+                        title="Edit connection, endpoint, bucket, or credentials"
                       >
                         <Edit2 className="w-3 h-3 text-sky-400" />
                         <span>Edit</span>
@@ -603,7 +571,7 @@ export const S3ManagerModal: React.FC<Props> = ({ isOpen, onClose, onDatasetRegi
                   <div className="p-12 text-center text-slate-500 text-xs border border-dashed border-[#1f2b45] rounded-xl flex flex-col items-center justify-center">
                     <Cloud className="w-10 h-10 text-slate-600 mb-2" />
                     <span className="font-semibold text-slate-400">No S3 bucket configurations found</span>
-                    <span className="mt-1">Add your AWS S3 bucket credentials above to connect your lakehouse.</span>
+                    <span className="mt-1">Add your S3 bucket endpoint and credentials above to connect your lakehouse.</span>
                   </div>
                 )}
               </div>
